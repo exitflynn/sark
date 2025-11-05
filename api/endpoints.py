@@ -22,11 +22,13 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 store = None
 redis_client = None
 job_dispatcher = None
+health_monitor = None
+job_timeout_handler = None
 
 
 def init_endpoints(inmemory_store, redis_conn, dispatcher=None):
     """Initialize endpoints with store and redis references."""
-    global store, redis_client, job_dispatcher
+    global store, redis_client, job_dispatcher, health_monitor, job_timeout_handler
     store = inmemory_store
     redis_client = redis_conn
     job_dispatcher = dispatcher
@@ -357,5 +359,94 @@ def get_queue_status() -> Tuple[dict, int]:
     
     except Exception as e:
         logger.error(f"Error getting queue status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== Phase 3: Health & Monitoring ==========
+
+@api_bp.route('/workers/<worker_id>/health', methods=['GET'])
+def get_worker_health(worker_id: str) -> Tuple[dict, int]:
+    """Get worker health status."""
+    try:
+        if not health_monitor:
+            return jsonify({'error': 'Health monitor not available'}), 503
+        
+        health = health_monitor.get_worker_health(worker_id)
+        
+        if 'error' in health:
+            return jsonify(health), 404
+        
+        return jsonify(health), 200
+    
+    except Exception as e:
+        logger.error(f"Error getting worker health: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/health/workers', methods=['GET'])
+def get_all_worker_health() -> Tuple[dict, int]:
+    """Get health status for all workers."""
+    try:
+        if not health_monitor:
+            return jsonify({'error': 'Health monitor not available'}), 503
+        
+        health_statuses = health_monitor.get_all_health()
+        healthy_count = sum(1 for h in health_statuses if h.get('is_healthy'))
+        
+        return jsonify({
+            'total': len(health_statuses),
+            'healthy': healthy_count,
+            'unhealthy': len(health_statuses) - healthy_count,
+            'workers': health_statuses
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error getting all worker health: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/workers/<worker_id>/reset', methods=['PUT'])
+def reset_worker(worker_id: str) -> Tuple[dict, int]:
+    """Reset faulty worker."""
+    try:
+        worker = store.get_worker(worker_id)
+        if not worker:
+            return jsonify({'error': 'Worker not found'}), 404
+        
+        if worker.get('status') != 'faulty':
+            return jsonify({'error': 'Worker is not in faulty state'}), 400
+        
+        store.update_worker_status(worker_id, 'active')
+        
+        # Record new heartbeat
+        if health_monitor:
+            health_monitor.record_heartbeat(worker_id)
+        
+        logger.info(f"✅ Reset worker {worker_id} from faulty state")
+        
+        return jsonify({
+            'worker_id': worker_id,
+            'status': 'active',
+            'message': 'Worker reset successfully'
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error resetting worker: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/monitoring/stats', methods=['GET'])
+def get_monitoring_stats() -> Tuple[dict, int]:
+    """Get monitoring statistics."""
+    try:
+        stats = {
+            'health_monitor': health_monitor.get_status() if health_monitor else None,
+            'timeout_handler': job_timeout_handler.get_timeout_stats() if job_timeout_handler else None,
+        }
+        
+        return jsonify(stats), 200
+    
+    except Exception as e:
+        logger.error(f"Error getting monitoring stats: {e}")
         return jsonify({'error': str(e)}), 500
 
