@@ -4,6 +4,11 @@ psutil>=5.9.0
 numpy>=1.24.0
 pandas>=2.0.0
 
+# Model format support
+coremltools>=6.0.0  # Optional: for CoreML support (macOS/iOS)
+# torch>=2.0.0  # Optional: for PyTorch support
+# tensorflow>=2.0.0  # Optional: for TensorFlow support
+
 # Orchestration dependencies
 redis>=5.0.0
 flask>=3.0.0

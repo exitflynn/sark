@@ -10,6 +10,9 @@ from core.inmemory_store import InMemoryStore
 from core.redis_client import RedisClient
 from core.result_processor import ResultProcessor
 from core.job_dispatcher import JobDispatcher
+from core.health_monitor import HealthMonitor
+from core.job_timeout import JobTimeoutHandler
+from core.retry_manager import RetryManager, RetryPolicy
 from api.endpoints import api_bp, init_endpoints
 
 
@@ -56,6 +59,30 @@ def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
     result_processor = ResultProcessor(store, redis_client)
     result_processor.start()
     
+    # Initialize health monitor
+    health_monitor = HealthMonitor(store, heartbeat_timeout=60, check_interval=10)
+    health_monitor.start()
+    logger.info("✅ Initialized health monitor")
+    
+    # Initialize retry manager with exponential backoff (Phase 4)
+    retry_policy = RetryPolicy(
+        max_attempts=3,
+        initial_delay=1.0,
+        max_delay=300.0,
+        backoff_multiplier=2.0,
+        jitter=True
+    )
+    retry_manager = RetryManager(policy=retry_policy)
+    logger.info("✅ Initialized retry manager with exponential backoff")
+    
+    # Initialize job timeout handler with retry support
+    job_timeout_handler = JobTimeoutHandler(store, redis_client, 
+                                           default_timeout=3600, 
+                                           check_interval=5,
+                                           retry_manager=retry_manager)
+    job_timeout_handler.start()
+    logger.info("✅ Initialized job timeout handler with retry")
+    
     # Initialize endpoints with store, redis, and job dispatcher references
     init_endpoints(store, redis_client, job_dispatcher)
     
@@ -67,6 +94,9 @@ def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
     app.redis_client = redis_client
     app.job_dispatcher = job_dispatcher
     app.result_processor = result_processor
+    app.health_monitor = health_monitor
+    app.job_timeout_handler = job_timeout_handler
+    app.retry_manager = retry_manager
     
     # Basic route
     @app.route('/', methods=['GET'])
