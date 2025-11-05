@@ -8,6 +8,8 @@ import argparse
 from flask import Flask
 from core.inmemory_store import InMemoryStore
 from core.redis_client import RedisClient
+from core.result_processor import ResultProcessor
+from core.job_dispatcher import JobDispatcher
 from api.endpoints import api_bp, init_endpoints
 
 
@@ -46,8 +48,16 @@ def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
     else:
         logger.info(f"✅ Connected to Redis at {redis_host}:{redis_port}")
     
-    # Initialize endpoints with store and redis references
-    init_endpoints(store, redis_client)
+    # Initialize job dispatcher
+    job_dispatcher = JobDispatcher(redis_client)
+    logger.info("✅ Initialized job dispatcher")
+    
+    # Initialize result processor
+    result_processor = ResultProcessor(store, redis_client)
+    result_processor.start()
+    
+    # Initialize endpoints with store, redis, and job dispatcher references
+    init_endpoints(store, redis_client, job_dispatcher)
     
     # Register API blueprint
     app.register_blueprint(api_bp)
@@ -55,6 +65,8 @@ def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
     # Store references for access in other parts of the app
     app.store = store
     app.redis_client = redis_client
+    app.job_dispatcher = job_dispatcher
+    app.result_processor = result_processor
     
     # Basic route
     @app.route('/', methods=['GET'])

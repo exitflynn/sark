@@ -1,8 +1,3 @@
-"""
-Phase 1 Tests: Core Infrastructure
-Tests for InMemoryStore, RedisClient, and HTTP API framework.
-"""
-
 import unittest
 import tempfile
 import os

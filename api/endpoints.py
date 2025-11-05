@@ -21,13 +21,15 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 # Global references (will be injected by orchestrator)
 store = None
 redis_client = None
+job_dispatcher = None
 
 
-def init_endpoints(inmemory_store, redis_conn):
+def init_endpoints(inmemory_store, redis_conn, dispatcher=None):
     """Initialize endpoints with store and redis references."""
-    global store, redis_client
+    global store, redis_client, job_dispatcher
     store = inmemory_store
     redis_client = redis_conn
+    job_dispatcher = dispatcher
 
 
 # ========== Health Checks ==========
@@ -179,16 +181,17 @@ def create_campaign() -> Tuple[dict, int]:
             # Create job in store
             store.create_job(job_info)
             
-            # Push to appropriate Redis queue
-            if job_spec.get('worker_id'):
-                # Static assignment - push to worker-specific queue
-                queue_name = f"jobs:{job_spec['worker_id']}"
+            # Push to appropriate Redis queue using job dispatcher
+            if job_dispatcher:
+                job_dispatcher.push_job_to_queues(job_info)
             else:
-                # Capability-based - push to capability queue
-                queue_name = f"jobs:capability:{job_spec.get('compute_unit')}"
-            
-            redis_client.push_job(queue_name, job_id)
-            logger.debug(f"Queued job {job_id} to {queue_name}")
+                # Fallback: push manually
+                if job_spec.get('worker_id'):
+                    queue_name = f"jobs:{job_spec['worker_id']}"
+                else:
+                    queue_name = f"jobs:capability:{job_spec.get('compute_unit')}"
+                redis_client.push_job(queue_name, job_id)
+                logger.debug(f"Queued job {job_id} to {queue_name}")
         
         logger.info(f"Created campaign {campaign_id} with {len(data['jobs'])} jobs")
         
