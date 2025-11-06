@@ -1,12 +1,16 @@
 """
 Result Processor - Background thread that processes benchmark results.
 Polls Redis results queue, updates store, and tracks campaign progress.
+Generates CSV files for completed campaigns.
 """
 
 import logging
 import threading
 import time
-from typing import Optional
+import csv
+import os
+from datetime import datetime
+from typing import Optional, List, Dict
 from core.inmemory_store import InMemoryStore
 from core.redis_client import RedisClient
 
@@ -18,7 +22,7 @@ class ResultProcessor:
     """Background thread for processing benchmark results."""
     
     def __init__(self, store: InMemoryStore, redis_client: RedisClient, 
-                 poll_timeout: int = 1):
+                 poll_timeout: int = 1, output_dir: str = 'outputs'):
         """
         Initialize result processor.
         
@@ -26,12 +30,17 @@ class ResultProcessor:
             store: InMemoryStore instance
             redis_client: RedisClient instance
             poll_timeout: Timeout for blocking queue operations (seconds)
+            output_dir: Directory for CSV output files
         """
         self.store = store
         self.redis_client = redis_client
         self.poll_timeout = poll_timeout
         self.running = False
         self.thread: Optional[threading.Thread] = None
+        self.output_dir = output_dir
+        
+        # Create output directory if it doesn't exist
+        self._ensure_output_directory()
     
     def start(self) -> None:
         """Start result processor in background thread."""
@@ -54,6 +63,54 @@ class ResultProcessor:
         if self.thread:
             self.thread.join(timeout=5)
             logger.info("Result processor stopped")
+    
+    def _ensure_output_directory(self) -> None:
+        """Create output directory if it doesn't exist."""
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+            logger.info(f"✅ Created output directory: {self.output_dir}")
+    
+    def _generate_csv_file(self, campaign_id: str, results: List[Dict]) -> Optional[str]:
+        """
+        Generate CSV file from results.
+        
+        Args:
+            campaign_id: Campaign ID
+            results: List of result dictionaries
+            
+        Returns:
+            Path to generated CSV file, or None if failed
+        """
+        if not results:
+            logger.warning(f"No results to save for campaign {campaign_id}")
+            return None
+        
+        try:
+            # Create timestamp for unique filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'{campaign_id}_{timestamp}_results.csv'
+            filepath = os.path.join(self.output_dir, filename)
+            
+            # Get all unique keys from all results
+            all_keys = set()
+            for result in results:
+                all_keys.update(result.keys())
+            
+            fieldnames = sorted(list(all_keys))
+            
+            # Write CSV file
+            with open(filepath, 'w', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(results)
+            
+            logger.info(f"✅ Generated CSV: {filepath}")
+            return filepath
+        
+        except Exception as e:
+            logger.error(f"Failed to generate CSV for {campaign_id}: {e}")
+            return None
+    
     
     def _process_loop(self) -> None:
         """Main processing loop (runs in background thread)."""
@@ -117,11 +174,33 @@ class ResultProcessor:
                     total_jobs = campaign.get('total_jobs', 0)
                     
                     if total_completed >= total_jobs and total_jobs > 0:
-                        self.store.update_campaign_progress(campaign_id, status='complete')
                         logger.info(f"🎉 Campaign {campaign_id} complete! ({total_completed}/{total_jobs} jobs)")
+                        logger.info(f"   Updating campaign status to 'completed'")
+                        
+                        # Update status to 'completed' (normalized value for frontend)
+                        self.store.update_campaign_progress(campaign_id, status='completed')
+                        
+                        # Generate CSV file with results
+                        try:
+                            logger.info(f"📊 Generating CSV for campaign {campaign_id}")
+                            campaign_results = self.store.query_results_for_csv(campaign_id)
+                            logger.info(f"   Found {len(campaign_results)} results to save")
+                            
+                            csv_path = self._generate_csv_file(campaign_id, campaign_results)
+                            
+                            if csv_path:
+                                # Store file path in campaign metadata
+                                campaign['results_file'] = csv_path
+                                logger.info(f"✅ CSV generated and stored: {csv_path}")
+                            else:
+                                logger.warning(f"   CSV generation returned None")
+                        except Exception as e:
+                            logger.error(f"Failed to generate CSV for campaign {campaign_id}: {e}", exc_info=True)
                         
                         # Force save to disk
+                        logger.info(f"   Saving campaign state to disk")
                         self.store.force_save()
+                        logger.info(f"✅ Campaign {campaign_id} finalization complete")
             
             logger.info(f"✅ Processed result for job {job_id}")
         

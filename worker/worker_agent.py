@@ -9,6 +9,7 @@ import time
 import requests
 import json
 import os
+import threading
 from typing import Dict, Optional, List
 
 # Add parent directory to path for imports
@@ -47,6 +48,12 @@ class WorkerAgent:
         self.redis_client = None
         self.running = False
         
+        # Heartbeat thread management
+        self.heartbeat_thread: Optional[threading.Thread] = None
+        self.heartbeat_running = False
+        self.heartbeat_interval = 10  # seconds
+        self.continuous_heartbeat = False  # For heartbeat during idle & execution
+        
         # Lazy imports to avoid issues if Redis not available
         self._redis = None
     
@@ -65,6 +72,142 @@ class WorkerAgent:
     def redis_client(self, value):
         """Set Redis client."""
         self._redis = value
+    
+    def start_heartbeat_during_execution(self, interval: int = 10) -> None:
+        """
+        Start sending heartbeats during job execution.
+        
+        Args:
+            interval: Heartbeat interval in seconds
+        """
+        if self.heartbeat_running:
+            logger.warning("⚠️  Heartbeat thread already running")
+            return
+        
+        self.heartbeat_interval = interval
+        self.heartbeat_running = True
+        self.continuous_heartbeat = True
+        self.heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            args=(interval,),
+            daemon=False,  # Non-daemon - thread will stay alive during job execution
+            name="WorkerHeartbeatThread"
+        )
+        self.heartbeat_thread.start()
+        logger.info(f"❤️  Started heartbeat thread (every {interval}s) for worker {self.worker_id}")
+    
+    def stop_heartbeat_during_execution(self) -> None:
+        """Stop sending heartbeats after job execution."""
+        if not self.heartbeat_running:
+            return
+        
+        logger.info(f"🛑 Stopping heartbeat thread for worker {self.worker_id}")
+        self.continuous_heartbeat = False
+        self.heartbeat_running = False
+        if self.heartbeat_thread:
+            # Wait for thread to finish, but don't block forever
+            self.heartbeat_thread.join(timeout=2)
+            logger.info(f"✅ Heartbeat thread stopped")
+    
+    def start_continuous_heartbeat(self, interval: int = 10) -> None:
+        """
+        Start continuous heartbeat for the entire job loop (idle + execution).
+        This ensures worker is never marked faulty while waiting for jobs.
+        
+        Args:
+            interval: Heartbeat interval in seconds
+        """
+        if self.heartbeat_running:
+            logger.warning("⚠️  Heartbeat thread already running")
+            return
+        
+        self.heartbeat_interval = interval
+        self.heartbeat_running = True
+        self.continuous_heartbeat = True
+        self.heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            args=(interval,),
+            daemon=False,  # Non-daemon - thread stays alive
+            name="WorkerContinuousHeartbeatThread"
+        )
+        self.heartbeat_thread.start()
+        logger.info(f"❤️  Started CONTINUOUS heartbeat thread (every {interval}s) for worker {self.worker_id}")
+        logger.info(f"   Worker will send heartbeat during IDLE time AND job execution")
+    
+    def stop_continuous_heartbeat(self) -> None:
+        """Stop continuous heartbeat when shutting down."""
+        if not self.heartbeat_running:
+            return
+        
+        logger.info(f"🛑 Stopping continuous heartbeat for worker {self.worker_id}")
+        self.continuous_heartbeat = False
+        self.heartbeat_running = False
+        if self.heartbeat_thread:
+            self.heartbeat_thread.join(timeout=2)
+            logger.info(f"✅ Continuous heartbeat stopped")
+    
+    def _heartbeat_loop(self, interval: int) -> None:
+        """
+        Background thread for sending heartbeats to orchestrator.
+        Runs continuously during both idle and execution phases.
+        
+        Args:
+            interval: Heartbeat interval in seconds
+        """
+        heartbeat_count = 0
+        
+        logger.info(f"🔄 Heartbeat loop started for {self.worker_id}")
+        
+        while self.heartbeat_running:
+            try:
+                # Send heartbeat
+                response = requests.post(
+                    f"{self.orchestrator_url}/api/workers/{self.worker_id}/heartbeat",
+                    timeout=5,
+                    json={'timestamp': time.time()}
+                )
+                
+                heartbeat_count += 1
+                
+                if response.status_code == 200:
+                    logger.info(f"❤️  Heartbeat #{heartbeat_count} sent successfully")
+                else:
+                    logger.warning(f"⚠️  Heartbeat #{heartbeat_count} failed: HTTP {response.status_code}")
+            
+            except requests.Timeout:
+                logger.warning(f"⚠️  Heartbeat #{heartbeat_count} timeout (5s)")
+            except Exception as e:
+                logger.warning(f"⚠️  Heartbeat #{heartbeat_count} error: {e}")
+            
+            # Sleep in small chunks for quick shutdown
+            for _ in range(int(interval * 10)):
+                if not self.heartbeat_running:
+                    logger.info(f"✅ Heartbeat loop exiting (sent {heartbeat_count} heartbeats total)")
+                    break
+                time.sleep(0.1)
+    
+    def _send_heartbeat(self) -> bool:
+        """
+        Send single heartbeat to orchestrator.
+        
+        Returns:
+            True if successful
+        """
+        try:
+            response = requests.post(
+                f"{self.orchestrator_url}/api/workers/{self.worker_id}/heartbeat",
+                timeout=5,
+                json={'timestamp': time.time()}
+            )
+            success = response.status_code == 200
+            if success:
+                logger.debug(f"❤️  Direct heartbeat sent: {self.worker_id}")
+            else:
+                logger.warning(f"⚠️  Direct heartbeat failed: {response.status_code}")
+            return success
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to send direct heartbeat: {e}")
+            return False
     
     def register_with_orchestrator(self) -> bool:
         """
@@ -142,6 +285,7 @@ class WorkerAgent:
     def execute_benchmark_job(self, job_info: Dict) -> Dict:
         """
         Execute a benchmarking job.
+        Heartbeats are handled by continuous heartbeat in job loop.
         
         Args:
             job_info: Job information
@@ -154,19 +298,29 @@ class WorkerAgent:
         compute_unit = job_info.get('compute_unit', 'CPU')
         num_inference_runs = job_info.get('num_inference_runs', 10)
         
-        logger.info(f"Executing job {job_id}")
-        logger.info(f"  Model: {model_url}")
-        logger.info(f"  Compute Unit: {compute_unit}")
+        start_time = time.time()
+        
+        logger.info(f"🚀 Executing job {job_id}")
+        logger.info(f"   Model: {model_url}")
+        logger.info(f"   Compute Unit: {compute_unit}")
+        logger.info(f"   Inference Runs: {num_inference_runs}")
+        logger.info(f"   ❤️  Heartbeat active (continuous mode, 10s interval)")
+        
+        start_time = time.time()
         
         try:
             # Initialize model loader and benchmark
+            logger.debug(f"   Initializing model loader...")
             model_loader = ModelLoader(compute_unit=compute_unit)
             benchmark = Benchmark()
             
             # Download model
+            logger.debug(f"   Downloading model...")
             model_path = model_loader.download_model(model_url)
+            logger.debug(f"   Model ready: {model_path}")
             
             # Run benchmark
+            logger.info(f"   Starting benchmark (this may take a while)...")
             metrics = benchmark.run_full_benchmark(
                 model_loader,
                 model_path,
@@ -181,6 +335,8 @@ class WorkerAgent:
             # Cleanup
             model_loader.cleanup()
             
+            elapsed = time.time() - start_time
+            
             result = {
                 'job_id': job_id,
                 'campaign_id': job_info.get('campaign_id'),
@@ -192,11 +348,12 @@ class WorkerAgent:
                 **metrics
             }
             
-            logger.info(f"✅ Job {job_id} completed")
+            logger.info(f"✅ Job {job_id} completed in {elapsed:.1f}s")
             return result
         
         except Exception as e:
-            logger.error(f"❌ Job {job_id} failed: {e}")
+            elapsed = time.time() - start_time
+            logger.error(f"❌ Job {job_id} failed after {elapsed:.1f}s: {e}", exc_info=True)
             return {
                 'job_id': job_id,
                 'campaign_id': job_info.get('campaign_id'),
@@ -241,7 +398,7 @@ class WorkerAgent:
         return queues
     
     def start_job_loop(self) -> None:
-        """Start job consumer loop."""
+        """Start job consumer loop with continuous heartbeat."""
         if not self.worker_id:
             logger.error("Worker not registered. Call register_with_orchestrator() first.")
             return
@@ -253,11 +410,16 @@ class WorkerAgent:
         logger.info(f"Starting job loop for worker {self.worker_id}")
         logger.info(f"Polling queues: {self.get_job_queue_names()}")
         
+        # Start continuous heartbeat for the entire job loop (idle + execution)
+        logger.info(f"🔄 Starting continuous heartbeat during job loop")
+        self.start_continuous_heartbeat(interval=10)
+        
         self.running = True
         job_count = 0
         
         try:
             while self.running:
+                logger.info(f"Polling for jobs...")
                 # Get queues to poll
                 queue_names = self.get_job_queue_names()
                 
@@ -291,8 +453,10 @@ class WorkerAgent:
             logger.error(f"Error in job loop: {e}", exc_info=True)
         
         finally:
+            # Stop continuous heartbeat when exiting
+            self.stop_continuous_heartbeat()
             self.running = False
-            logger.info(f"✅ Executed {job_count} jobs")
+            logger.info(f"✅ Job loop complete: Executed {job_count} jobs")
 
 
 def main():

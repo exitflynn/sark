@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LOPS Setup Validation & Diagnostics Script
+CycleOPS Setup Validation & Diagnostics Script
 
 Validates the setup of a worker or orchestrator node.
 Identifies missing dependencies, platform issues, and configuration problems.
@@ -507,7 +507,7 @@ def validate_orchestrator_setup() -> bool:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='LOPS Setup Validation & Diagnostics',
+        description='CycleOPS Setup Validation & Diagnostics',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

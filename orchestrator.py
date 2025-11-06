@@ -5,7 +5,7 @@ HTTP API server for managing distributed benchmarking campaigns.
 
 import logging
 import argparse
-from flask import Flask
+from flask import Flask, render_template
 from core.inmemory_store import InMemoryStore
 from core.redis_client import RedisClient
 from core.result_processor import ResultProcessor
@@ -98,12 +98,26 @@ def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
     app.job_timeout_handler = job_timeout_handler
     app.retry_manager = retry_manager
     
-    # Basic route
+    # Web UI route
     @app.route('/', methods=['GET'])
     def index():
+        """Serve the web dashboard."""
+        return render_template('index.html')
+    
+    # API info endpoint
+    @app.route('/api', methods=['GET'])
+    def api_info():
+        """Get API information."""
         return {
             'status': 'Orchestrator running',
-            'version': '0.1.0'
+            'version': '0.1.0',
+            'endpoints': {
+                'web_ui': '/',
+                'health': '/api/health',
+                'workers': '/api/workers',
+                'campaigns': '/api/campaigns',
+                'jobs': '/api/jobs'
+            }
         }, 200
     
     return app

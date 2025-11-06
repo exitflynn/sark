@@ -7,9 +7,11 @@ from flask import Blueprint, request, jsonify, send_file
 import uuid
 import csv
 import io
+import os
 import logging
+import hashlib
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, Dict, Any
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,36 @@ def init_endpoints(inmemory_store, redis_conn, dispatcher=None):
     store = inmemory_store
     redis_client = redis_conn
     job_dispatcher = dispatcher
+
+
+def get_deterministic_worker_id(device_info: Dict[str, Any]) -> str:
+    """
+    Generate consistent worker ID based on device UDID.
+    Same device always gets same ID, preventing duplicates on restart.
+    
+    Args:
+        device_info: Device information dictionary
+        
+    Returns:
+        Deterministic worker ID
+    """
+    # Use UDID if available (preferred), fall back to other identifiers
+    udid = device_info.get('UDID')
+    
+    if udid:
+        # Hash the UDID to keep ID length reasonable
+        hash_obj = hashlib.md5(udid.encode())
+        return f"worker-{hash_obj.hexdigest()[:12]}"
+    
+    # Fallback: Use combination of device identifiers
+    device_key = f"{device_info.get('DeviceName', '')}_{device_info.get('Soc', '')}_{device_info.get('Ram', 0)}_{device_info.get('DeviceOs', '')}"
+    
+    if device_key.strip('_'):  # If we have any data
+        hash_obj = hashlib.md5(device_key.encode())
+        return f"worker-{hash_obj.hexdigest()[:12]}"
+    
+    # Last resort: Generate random ID
+    return f"worker-{uuid.uuid4().hex[:12]}"
 
 
 # ========== Health Checks ==========
@@ -79,7 +111,7 @@ def get_worker(worker_id: str) -> Tuple[dict, int]:
 
 @api_bp.route('/register', methods=['POST'])
 def register_worker() -> Tuple[dict, int]:
-    """Register a new worker."""
+    """Register or update a worker with deterministic ID based on device UDID."""
     try:
         data = request.get_json()
         
@@ -89,8 +121,8 @@ def register_worker() -> Tuple[dict, int]:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
         
-        # Generate unique worker ID
-        worker_id = f"worker-{uuid.uuid4()}"
+        # Generate deterministic worker ID from device info (uses UDID if available)
+        worker_id = get_deterministic_worker_id(data['device_info'])
         
         worker_info = {
             'worker_id': worker_id,
@@ -103,17 +135,37 @@ def register_worker() -> Tuple[dict, int]:
             'ram_gb': data['device_info'].get('Ram', 0),
             'os': data['device_info'].get('DeviceOs', ''),
             'os_version': data['device_info'].get('DeviceOsVersion', ''),
+            'udid': data['device_info'].get('UDID', ''),
         }
         
-        # Register in store
-        store.register_worker(worker_info)
+        # Check if worker already exists
+        existing = store.get_worker(worker_id)
         
-        logger.info(f"Registered worker {worker_id} ({data['device_name']})")
-        
-        return jsonify({
-            'worker_id': worker_id,
-            'status': 'registered'
-        }), 200
+        if existing:
+            # Update status to active if was faulty (recovery mechanism)
+            if existing.get('status') == 'faulty':
+                store.update_worker_status(worker_id, 'active')
+                logger.info(f"♻️  Re-registered worker {worker_id} ({data['device_name']}) - status recovered from faulty to active")
+            else:
+                store.update_worker_status(worker_id, 'active')
+                logger.info(f"♻️  Worker {worker_id} ({data['device_name']}) reconnected - updated registration")
+            
+            return jsonify({
+                'worker_id': worker_id,
+                'status': 'updated',
+                'action': 'recovered' if existing.get('status') == 'faulty' else 'updated'
+            }), 200
+        else:
+            # New worker registration
+            store.register_worker(worker_info)
+            logger.info(f"✅ Registered new worker {worker_id} ({data['device_name']})")
+            logger.info(f"   Capabilities: {', '.join(data['capabilities'])}")
+            
+            return jsonify({
+                'worker_id': worker_id,
+                'status': 'registered',
+                'action': 'created'
+            }), 200
     
     except Exception as e:
         logger.error(f"Error registering worker: {e}")
@@ -157,10 +209,13 @@ def create_campaign() -> Tuple[dict, int]:
         # Generate campaign ID
         campaign_id = f"campaign-{int(datetime.utcnow().timestamp())}"
         
+        # Prepare campaign info with jobs array for tracking
+        jobs_array = []
         campaign_info = {
             'campaign_id': campaign_id,
             'model_url': data['model_url'],
-            'total_jobs': len(data['jobs'])
+            'total_jobs': len(data['jobs']),
+            'jobs': jobs_array  # Will be populated below
         }
         
         # Create campaign
@@ -169,18 +224,26 @@ def create_campaign() -> Tuple[dict, int]:
         # Create jobs and push to Redis queues
         for i, job_spec in enumerate(data['jobs']):
             job_id = f"{campaign_id}-job-{i}"
+            compute_unit = job_spec.get('compute_unit', 'CPU')
             
             job_info = {
                 'job_id': job_id,
                 'campaign_id': campaign_id,
                 'model_url': data['model_url'],
-                'compute_unit': job_spec.get('compute_unit'),
+                'compute_unit': compute_unit,
                 'worker_id': job_spec.get('worker_id'),
                 'num_inference_runs': job_spec.get('num_inference_runs', 10)
             }
             
             # Create job in store
             store.create_job(job_info)
+            
+            # Add to campaign's job tracking
+            jobs_array.append({
+                'job_id': job_id,
+                'compute_unit': compute_unit,
+                'status': 'pending'
+            })
             
             # Push to appropriate Redis queue using job dispatcher
             if job_dispatcher:
@@ -190,16 +253,19 @@ def create_campaign() -> Tuple[dict, int]:
                 if job_spec.get('worker_id'):
                     queue_name = f"jobs:{job_spec['worker_id']}"
                 else:
-                    queue_name = f"jobs:capability:{job_spec.get('compute_unit')}"
+                    queue_name = f"jobs:capability:{compute_unit}"
                 redis_client.push_job(queue_name, job_id)
                 logger.debug(f"Queued job {job_id} to {queue_name}")
         
-        logger.info(f"Created campaign {campaign_id} with {len(data['jobs'])} jobs")
+        logger.info(f"✅ Created campaign {campaign_id} with {len(data['jobs'])} jobs")
+        for i, job in enumerate(jobs_array):
+            logger.info(f"   Job {i+1}: {job['job_id']} (compute_unit={job['compute_unit']})")
         
         return jsonify({
             'campaign_id': campaign_id,
             'total_jobs': len(data['jobs']),
-            'status': 'running'
+            'status': 'running',
+            'jobs': jobs_array
         }), 200
     
     except Exception as e:
@@ -254,13 +320,26 @@ def get_campaign(campaign_id: str) -> Tuple[dict, int]:
 
 @api_bp.route('/campaigns/<campaign_id>/results', methods=['GET'])
 def get_campaign_results(campaign_id: str) -> Tuple[dict, int]:
-    """Get campaign results as CSV."""
+    """Get campaign results as CSV - from file if available, otherwise from memory."""
     try:
         campaign = store.get_campaign(campaign_id)
         if not campaign:
             return jsonify({'error': 'Campaign not found'}), 404
         
-        # Query results
+        # Check if CSV file exists on disk
+        csv_file = campaign.get('results_file')
+        
+        if csv_file and os.path.exists(csv_file):
+            # Serve from file
+            logger.info(f"Serving campaign results from file: {csv_file}")
+            return send_file(
+                csv_file,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'{campaign_id}_results.csv'
+            )
+        
+        # Fallback: Generate from memory
         results = store.query_results_for_csv(campaign_id)
         
         if not results:
@@ -434,6 +513,120 @@ def reset_worker(worker_id: str) -> Tuple[dict, int]:
         return jsonify({'error': str(e)}), 500
 
 
+@api_bp.route('/workers/<worker_id>/heartbeat', methods=['POST'])
+def worker_heartbeat(worker_id: str) -> Tuple[dict, int]:
+    """
+    Record worker heartbeat during job execution.
+    Workers send periodic heartbeats while executing long-running jobs
+    to prevent being marked as faulty by the health monitor.
+    
+    If worker was marked faulty, recover it back to active status.
+    """
+    try:
+        worker = store.get_worker(worker_id)
+        if not worker:
+            logger.warning(f"Heartbeat received for unknown worker: {worker_id}")
+            return jsonify({'error': 'Worker not found'}), 404
+        
+        current_status = worker.get('status', 'active')
+        
+        # Record heartbeat in health monitor (resets the timeout counter)
+        if health_monitor:
+            health_monitor.record_heartbeat(worker_id)
+            logger.debug(f"❤️  Heartbeat recorded for {worker_id}")
+        
+        # If worker was faulty, recover it to active
+        if current_status == 'faulty':
+            logger.info(f"♻️  Worker {worker_id} recovered from faulty status (via heartbeat)")
+            store.update_worker_status(worker_id, 'active')
+            status_action = 'recovered'
+        else:
+            # Just update last_seen timestamp (keep current status)
+            store.update_worker_status(worker_id, current_status)
+            status_action = 'updated'
+        
+        return jsonify({
+            'worker_id': worker_id,
+            'timestamp': datetime.utcnow().isoformat(),
+            'status': 'active',
+            'previous_status': current_status,
+            'action': status_action
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error recording heartbeat: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+
+
+# ========== Result Files ==========
+
+@api_bp.route('/results/files', methods=['GET'])
+def list_result_files() -> Tuple[dict, int]:
+    """List all available CSV result files from outputs folder."""
+    try:
+        files = []
+        output_dir = 'outputs'
+        
+        if os.path.exists(output_dir):
+            for filename in os.listdir(output_dir):
+                if filename.endswith('_results.csv'):
+                    filepath = os.path.join(output_dir, filename)
+                    file_size = os.path.getsize(filepath)
+                    mod_time = os.path.getmtime(filepath)
+                    
+                    files.append({
+                        'filename': filename,
+                        'path': filepath,
+                        'size_bytes': file_size,
+                        'size_mb': round(file_size / 1024 / 1024, 2),
+                        'modified': datetime.fromtimestamp(mod_time).isoformat()
+                    })
+        
+        # Sort by modification time (newest first)
+        files.sort(key=lambda x: x['modified'], reverse=True)
+        
+        logger.debug(f"Listed {len(files)} result files")
+        
+        return jsonify({
+            'count': len(files),
+            'files': files
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error listing result files: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/results/download/<path:filename>', methods=['GET'])
+def download_result_file(filename: str) -> Tuple[dict, int]:
+    """Download a specific CSV result file from outputs folder."""
+    try:
+        # Security: validate filename to prevent directory traversal
+        if '..' in filename or filename.startswith('/'):
+            return jsonify({'error': 'Invalid filename'}), 400
+        
+        filepath = os.path.join('outputs', filename)
+        
+        # Verify file exists and ends with .csv
+        if not os.path.exists(filepath) or not filename.endswith('_results.csv'):
+            return jsonify({'error': 'File not found'}), 404
+        
+        logger.info(f"Downloading result file: {filepath}")
+        
+        return send_file(
+            filepath,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+    
+    except Exception as e:
+        logger.error(f"Error downloading file: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @api_bp.route('/monitoring/stats', methods=['GET'])
 def get_monitoring_stats() -> Tuple[dict, int]:
     """Get monitoring statistics."""
@@ -448,4 +641,5 @@ def get_monitoring_stats() -> Tuple[dict, int]:
     except Exception as e:
         logger.error(f"Error getting monitoring stats: {e}")
         return jsonify({'error': str(e)}), 500
+
 
