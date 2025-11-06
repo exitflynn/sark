@@ -1,2 +1,0 @@
-"""Legacy standalone worker modules."""
-
