@@ -4,11 +4,15 @@ Thread-safe store for workers, campaigns, jobs, and results.
 """
 
 import json
+import logging
 import threading
 import time
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+
+
+logger = logging.getLogger(__name__)
 
 
 class InMemoryStore:
@@ -44,12 +48,13 @@ class InMemoryStore:
                 self.workers = data.get('workers', {})
                 self.campaigns = data.get('campaigns', {})
                 self.jobs = data.get('jobs', {})
-                self.results = data.get('results', {})
-            print(f"✅ Loaded state from {self.persistence_file}")
+                # NOTE: Results are NOT loaded from disk - they should only come from Redis queue
+                # when workers submit them. This ensures results are fresh and not re-processed.
+                self.results = {}
         except FileNotFoundError:
-            print(f"No existing state file, starting fresh")
-        except json.JSONDecodeError as e:
-            print(f"⚠️  Failed to parse state file: {e}, starting fresh")
+            pass
+        except json.JSONDecodeError:
+            pass
     
     def _save_to_disk(self) -> None:
         """Persist state to JSON file."""
@@ -69,7 +74,7 @@ class InMemoryStore:
                     json.dump(data, f, indent=2)
                 os.replace(temp_file, self.persistence_file)
             except Exception as e:
-                print(f"⚠️  Failed to save state: {e}")
+                logger.error(f"Failed to save state: {e}")
     
     def _persistence_thread(self) -> None:
         """Background thread that saves to disk every 30 seconds."""

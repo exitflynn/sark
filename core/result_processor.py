@@ -145,11 +145,9 @@ class ResultProcessor:
             
             # Save result to store
             self.store.save_result(result)
-            logger.debug(f"Saved result for job {job_id}")
             
             # Update job status
             self.store.update_job_status(job_id, status)
-            logger.debug(f"Updated job {job_id} status to {status}")
             
             # Update campaign progress
             if campaign_id:
@@ -158,14 +156,12 @@ class ResultProcessor:
                         campaign_id,
                         increment_completed=True
                     )
-                    logger.debug(f"Incremented completed jobs for campaign {campaign_id}")
                 
                 elif status == 'Failed':
                     self.store.update_campaign_progress(
                         campaign_id,
                         increment_failed=True
                     )
-                    logger.debug(f"Incremented failed jobs for campaign {campaign_id}")
                 
                 # Check if campaign is complete
                 campaign = self.store.get_campaign(campaign_id)
@@ -174,36 +170,30 @@ class ResultProcessor:
                     total_jobs = campaign.get('total_jobs', 0)
                     
                     if total_completed >= total_jobs and total_jobs > 0:
-                        logger.info(f"🎉 Campaign {campaign_id} complete! ({total_completed}/{total_jobs} jobs)")
-                        logger.info(f"   Updating campaign status to 'completed'")
+                        logger.info(f"Campaign {campaign_id} complete! ({total_completed}/{total_jobs} jobs)")
                         
                         # Update status to 'completed' (normalized value for frontend)
                         self.store.update_campaign_progress(campaign_id, status='completed')
                         
                         # Generate CSV file with results
                         try:
-                            logger.info(f"📊 Generating CSV for campaign {campaign_id}")
+                            logger.debug(f"Generating CSV for campaign {campaign_id}")
                             campaign_results = self.store.query_results_for_csv(campaign_id)
-                            logger.info(f"   Found {len(campaign_results)} results to save")
                             
                             csv_path = self._generate_csv_file(campaign_id, campaign_results)
                             
                             if csv_path:
                                 # Store file path in campaign metadata
                                 campaign['results_file'] = csv_path
-                                logger.info(f"✅ CSV generated and stored: {csv_path}")
+                                logger.info(f"CSV generated: {csv_path}")
                             else:
-                                logger.warning(f"   CSV generation returned None")
+                                logger.warning(f"CSV generation failed for campaign {campaign_id}")
                         except Exception as e:
                             logger.error(f"Failed to generate CSV for campaign {campaign_id}: {e}", exc_info=True)
                         
                         # Force save to disk
-                        logger.info(f"   Saving campaign state to disk")
                         self.store.force_save()
-                        logger.info(f"✅ Campaign {campaign_id} finalization complete")
             
-            logger.info(f"✅ Processed result for job {job_id}")
-        
         except Exception as e:
             logger.error(f"Error processing result: {e}", exc_info=True)
     

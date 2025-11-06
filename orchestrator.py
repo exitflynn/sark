@@ -163,8 +163,19 @@ def main():
         action='store_true',
         help='Run in debug mode'
     )
+    parser.add_argument(
+        '--reset-state',
+        action='store_true',
+        help='Reset state file on startup (fresh start)'
+    )
     
     args = parser.parse_args()
+    
+    if args.reset_state:
+        import os
+        if os.path.exists(args.state_file):
+            os.remove(args.state_file)
+            logger.info(f"Reset state file: {args.state_file}")
     
     # Create app
     app = create_app(

@@ -21,7 +21,7 @@ RUN cat > /app/start.sh << 'SCRIPT_EOF'
 #!/bin/bash
 set -e
 
-redis-server --daemonize yes --port 6379 --bind 0.0.0.0
+redis-server --daemonize yes --port 6379 --bind 0.0.0.0 --protected-mode no
 
 for i in {1..30}; do
     if redis-cli -h localhost ping 2>/dev/null | grep -q PONG; then
@@ -31,7 +31,7 @@ for i in {1..30}; do
     sleep 1
 done
 
-exec python orchestrator.py --host 0.0.0.0 --redis-host localhost --redis-port 6379
+exec python orchestrator.py --host 0.0.0.0 --redis-host 127.0.0.1 --redis-port 6379 --reset-state
 SCRIPT_EOF
 RUN chmod +x /app/start.sh
 
