@@ -1,35 +1,43 @@
-# CycleOPS Orchestrator Server
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
     redis-server \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY orchestrator.py .
 COPY api/ ./api/
 COPY core/ ./core/
 COPY templates/ ./templates/
 
-# Create outputs directory
 RUN mkdir -p outputs
+RUN cat > /app/start.sh << 'SCRIPT_EOF'
+#!/bin/bash
+set -e
 
-# Expose ports
+redis-server --daemonize yes --port 6379 --bind 0.0.0.0
+
+for i in {1..30}; do
+    if redis-cli -h localhost ping 2>/dev/null | grep -q PONG; then
+        echo "✅ Redis ready!"
+        break
+    fi
+    sleep 1
+done
+
+exec python orchestrator.py --host 0.0.0.0 --redis-host localhost --redis-port 6379
+SCRIPT_EOF
+RUN chmod +x /app/start.sh
+
 EXPOSE 5000 6379
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:5000/api/health || exit 1
 
-# Run orchestrator
-CMD ["python", "orchestrator.py"]
+CMD ["/app/start.sh"]
