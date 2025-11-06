@@ -139,7 +139,6 @@ class JobTimeoutHandler:
                     'worker_id': None,  # Clear worker assignment
                     'status': 'pending',
                     'retry_after': time.time() + retry_delay,
-                    'num_warmups': job.get('num_warmups'),
                     'num_inference_runs': job.get('num_inference_runs'),
                     'submitted_at': job.get('submitted_at'),
                 }

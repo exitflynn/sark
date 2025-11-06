@@ -176,7 +176,6 @@ def create_campaign() -> Tuple[dict, int]:
                 'model_url': data['model_url'],
                 'compute_unit': job_spec.get('compute_unit'),
                 'worker_id': job_spec.get('worker_id'),
-                'num_warmups': job_spec.get('num_warmups', 5),
                 'num_inference_runs': job_spec.get('num_inference_runs', 10)
             }
             

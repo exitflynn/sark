@@ -152,7 +152,6 @@ class WorkerAgent:
         job_id = job_info['job_id']
         model_url = job_info['model_url']
         compute_unit = job_info.get('compute_unit', 'CPU')
-        num_warmups = job_info.get('num_warmups', 5)
         num_inference_runs = job_info.get('num_inference_runs', 10)
         
         logger.info(f"Executing job {job_id}")
@@ -162,7 +161,7 @@ class WorkerAgent:
         try:
             # Initialize model loader and benchmark
             model_loader = ModelLoader(compute_unit=compute_unit)
-            benchmark = Benchmark(num_warmups=num_warmups)
+            benchmark = Benchmark()
             
             # Download model
             model_path = model_loader.download_model(model_url)

@@ -24,15 +24,14 @@ def generate_upload_id() -> str:
 
 
 def run_benchmark_job(model_url: str, compute_unit: str = 'CPU', 
-                     num_warmups: int = 5, num_inference_runs: int = 10) -> Dict:
+                     num_inference_runs: int = 10) -> Dict:
     """
     Run a single benchmark job.
     
     Args:
         model_url: URL to download the model from
         compute_unit: Compute unit to use for inference
-        num_warmups: Number of warmup runs
-        num_inference_runs: Number of inference runs for statistics
+        num_inference_runs: Number of inference runs to measure (all measured)
         
     Returns:
         Dictionary with benchmark results
@@ -44,7 +43,7 @@ def run_benchmark_job(model_url: str, compute_unit: str = 'CPU',
     
     # Initialize components
     model_loader = ModelLoader(compute_unit=compute_unit)
-    benchmark = Benchmark(num_warmups=num_warmups)
+    benchmark = Benchmark()
     
     try:
         # Download model
@@ -105,8 +104,8 @@ def generate_csv_report(results: list, output_path: str):
         'CreatedUtc', 'Status', 'UploadId', 'FileName', 'FileSize', 'CompressionConfig',
         'DeviceName', 'DeviceYear', 'Soc', 'Ram', 'DiscreteGpu', 'VRam',
         'DeviceOs', 'DeviceOsVersion', 'ComputeUnits',
-        'LoadMsMedian', 'LoadMsStdDev', 'LoadMsAverage', 'LoadMsFirst', 'PeakLoadRamUsage',
-        'InferenceMsMedian', 'InferenceMsStdDev', 'InferenceMsAverage', 'InferenceMsFirst', 'PeakInferenceRamUsage'
+        'LoadMsMin', 'LoadMsMax', 'LoadMsMedian', 'LoadMsStdDev', 'LoadMsAverage', 'LoadMsFirst', 'PeakLoadRamUsage',
+        'InferenceMsMin', 'InferenceMsMax', 'InferenceMsMedian', 'InferenceMsStdDev', 'InferenceMsAverage', 'InferenceMsFirst', 'PeakInferenceRamUsage'
     ]
     
     upload_id = generate_upload_id()
@@ -137,11 +136,15 @@ def generate_csv_report(results: list, output_path: str):
                 'DeviceOs': safe_value(device_info.get('DeviceOs')),
                 'DeviceOsVersion': safe_value(device_info.get('DeviceOsVersion')),
                 'ComputeUnits': safe_value(result.get('ComputeUnits')),
+                'LoadMsMin': safe_value(result.get('LoadMsMin')),
+                'LoadMsMax': safe_value(result.get('LoadMsMax')),
                 'LoadMsMedian': safe_value(result.get('LoadMsMedian')),
                 'LoadMsStdDev': safe_value(result.get('LoadMsStdDev')),
                 'LoadMsAverage': safe_value(result.get('LoadMsAverage')),
                 'LoadMsFirst': safe_value(result.get('LoadMsFirst')),
                 'PeakLoadRamUsage': safe_value(result.get('PeakLoadRamUsage')),
+                'InferenceMsMin': safe_value(result.get('InferenceMsMin')),
+                'InferenceMsMax': safe_value(result.get('InferenceMsMax')),
                 'InferenceMsMedian': safe_value(result.get('InferenceMsMedian')),
                 'InferenceMsStdDev': safe_value(result.get('InferenceMsStdDev')),
                 'InferenceMsAverage': safe_value(result.get('InferenceMsAverage')),
@@ -177,16 +180,10 @@ def main():
         help='Output CSV file path'
     )
     parser.add_argument(
-        '--num-warmups',
-        type=int,
-        default=5,
-        help='Number of warmup runs'
-    )
-    parser.add_argument(
         '--num-inference-runs',
         type=int,
         default=10,
-        help='Number of inference runs for statistics'
+        help='Number of inference runs to measure'
     )
     parser.add_argument(
         '--all-compute-units',
@@ -216,7 +213,6 @@ def main():
         result = run_benchmark_job(
             model_url=args.model_url,
             compute_unit=compute_unit,
-            num_warmups=args.num_warmups,
             num_inference_runs=args.num_inference_runs
         )
         results.append(result)
