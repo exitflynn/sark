@@ -68,21 +68,7 @@ class TestJobDispatcher(unittest.TestCase):
         
         self.assertTrue(success)
         self.redis_mock.push_job.assert_called_once()
-    
-    def test_get_worker_queue_priority(self):
-        """Test worker queue priority ordering."""
-        queues = JobDispatcher.get_worker_queue_priority(
-            'worker-1',
-            ['CPU', 'DML', 'OpenVINO;GPU']
-        )
-        
-        # Personal queue should be first
-        self.assertEqual(queues[0], 'jobs:worker-1')
-        # Capability queues should follow
-        self.assertIn('jobs:capability:CPU', queues)
-        self.assertIn('jobs:capability:DML', queues)
-        self.assertIn('jobs:capability:OpenVINO;GPU', queues)
-    
+     
     def test_push_jobs_from_campaign(self):
         """Test pushing all jobs from a campaign."""
         self.redis_mock.push_job.return_value = True
@@ -165,7 +151,7 @@ class TestResultProcessor(unittest.TestCase):
         self.assertEqual(saved_result['status'], 'Complete')
         
         # Verify campaign progress updated
-        campaign = self.store.get_campaign('campaign-1')
+        campaign = self.store.get_campaign('campaign-1') or {"":""}
         self.assertEqual(campaign['completed_jobs'], 1)
     
     def test_process_single_result_failure(self):

@@ -28,28 +28,22 @@ class InMemoryStore:
         self.persistence_file = persistence_file
         self.lock = threading.Lock()
         
-        # In-memory structures (replacing database tables)
-        self.workers: Dict[str, Dict[str, Any]] = {}      # worker_id -> worker_info
-        self.campaigns: Dict[str, Dict[str, Any]] = {}    # campaign_id -> campaign_info
-        self.jobs: Dict[str, Dict[str, Any]] = {}         # job_id -> job_info
-        self.results: Dict[str, Dict[str, Any]] = {}      # job_id -> result_info
+        self.workers: Dict[str, Dict[str, Any]] = {}
+        self.campaigns: Dict[str, Dict[str, Any]] = {}
+        self.jobs: Dict[str, Dict[str, Any]] = {}
+        self.results: Dict[str, Dict[str, Any]] = {}
         
-        # Load from disk if exists
         self._load_from_disk()
         
-        # Start background persistence thread
         self._start_persistence_thread()
     
     def _load_from_disk(self) -> None:
-        """Load state from JSON file on startup."""
         try:
             with open(self.persistence_file, 'r') as f:
                 data = json.load(f)
                 self.workers = data.get('workers', {})
                 self.campaigns = data.get('campaigns', {})
                 self.jobs = data.get('jobs', {})
-                # NOTE: Results are NOT loaded from disk - they should only come from Redis queue
-                # when workers submit them. This ensures results are fresh and not re-processed.
                 self.results = {}
         except FileNotFoundError:
             pass
@@ -57,7 +51,6 @@ class InMemoryStore:
             pass
     
     def _save_to_disk(self) -> None:
-        """Persist state to JSON file."""
         with self.lock:
             data = {
                 'workers': self.workers,
@@ -77,17 +70,14 @@ class InMemoryStore:
                 logger.error(f"Failed to save state: {e}")
     
     def _persistence_thread(self) -> None:
-        """Background thread that saves to disk every 30 seconds."""
         while True:
             time.sleep(30)
             self._save_to_disk()
     
     def _start_persistence_thread(self) -> None:
-        """Start background persistence thread."""
         t = threading.Thread(target=self._persistence_thread, daemon=True)
         t.start()
     
-    # ========== Worker Operations ==========
     
     def register_worker(self, worker_info: Dict[str, Any]) -> str:
         """
@@ -137,8 +127,6 @@ class InMemoryStore:
                 and w['status'] == 'active'
             ]
     
-    # ========== Campaign Operations ==========
-    
     def create_campaign(self, campaign_info: Dict[str, Any]) -> str:
         """
         Create a new campaign.
@@ -179,8 +167,6 @@ class InMemoryStore:
                     self.campaigns[campaign_id]['failed_jobs'] += 1
                 if status:
                     self.campaigns[campaign_id]['status'] = status
-    
-    # ========== Job Operations ==========
     
     def create_job(self, job_info: Dict[str, Any]) -> str:
         """

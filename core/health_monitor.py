@@ -1,8 +1,3 @@
-"""
-Health Monitor - Tracks worker health via heartbeats.
-Detects worker failures and marks workers as faulty when unresponsive.
-"""
-
 import logging
 import threading
 import time
@@ -15,19 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 class HealthMonitor:
-    """Monitors worker health via heartbeats."""
     
     def __init__(self, store: InMemoryStore, 
                  heartbeat_timeout: int = 60,
                  check_interval: int = 10):
-        """
-        Initialize health monitor.
-        
-        Args:
-            store: InMemoryStore instance
-            heartbeat_timeout: Seconds without heartbeat before marking faulty
-            check_interval: Interval between health checks (seconds)
-        """
         self.store = store
         self.heartbeat_timeout = heartbeat_timeout
         self.check_interval = check_interval
@@ -58,13 +44,6 @@ class HealthMonitor:
         logger.info("Health monitor stopped")
     
     def record_heartbeat(self, worker_id: str) -> None:
-        """
-        Record heartbeat from worker.
-        Updates both internal tracking and store's last_seen timestamp.
-        
-        Args:
-            worker_id: Worker ID
-        """
         current_time = time.time()
         prev_time = self.last_heartbeat.get(worker_id)
         self.last_heartbeat[worker_id] = current_time
@@ -84,7 +63,6 @@ class HealthMonitor:
             logger.info(f"❤️  Initial heartbeat from {worker_id}")
     
     def _monitor_loop(self) -> None:
-        """Main monitoring loop (runs in background thread)."""
         logger.info("Health monitor loop starting")
         
         while self.running:
@@ -105,19 +83,15 @@ class HealthMonitor:
             worker_id = worker['worker_id']
             status = worker.get('status', 'unknown')
             
-            # Skip already faulty workers (already marked)
             if status == 'faulty':
                 continue
             
-            # Get last heartbeat time from worker's last_seen field (updated by record_heartbeat)
             last_seen = worker.get('last_seen')
             
-            # If no heartbeat recorded yet, skip check
             if last_seen is None:
                 logger.debug(f"   Worker {worker_id} status={status}: No heartbeat recorded yet")
                 continue
             
-            # Check for timeout
             time_since_heartbeat = current_time - last_seen
             
             if time_since_heartbeat > self.heartbeat_timeout:
@@ -127,7 +101,6 @@ class HealthMonitor:
                 )
                 self._mark_worker_faulty(worker_id, f"heartbeat_timeout_{time_since_heartbeat:.1f}s")
             elif time_since_heartbeat > self.heartbeat_timeout * 0.75:
-                # Warning when approaching timeout
                 logger.warning(
                     f"⚠️  Worker {worker_id} status={status}: Approaching heartbeat timeout "
                     f"({time_since_heartbeat:.1f}s / {self.heartbeat_timeout}s)"
@@ -154,15 +127,6 @@ class HealthMonitor:
             logger.error(f"Failed to mark worker {worker_id} as faulty: {e}", exc_info=True)
     
     def get_worker_health(self, worker_id: str) -> Dict:
-        """
-        Get health status for a worker.
-        
-        Args:
-            worker_id: Worker ID
-            
-        Returns:
-            Health status dictionary
-        """
         worker = self.store.get_worker(worker_id)
         if not worker:
             return {'error': 'Worker not found'}
@@ -187,7 +151,6 @@ class HealthMonitor:
         }
     
     def get_all_health(self) -> list:
-        """Get health status for all workers."""
         workers = self.store.get_all_workers()
         return [self.get_worker_health(w['worker_id']) for w in workers]
     

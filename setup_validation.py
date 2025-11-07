@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CycleOPS Setup Validation & Diagnostics Script
+sark Setup Validation & Diagnostics Script
 
 Validates the setup of a worker or orchestrator node.
 Identifies missing dependencies, platform issues, and configuration problems.
@@ -419,7 +419,7 @@ def validate_orchestrator_setup() -> bool:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='CycleOPS Setup Validation & Diagnostics',
+        description='sark Setup Validation & Diagnostics',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

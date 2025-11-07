@@ -31,15 +31,13 @@ class CoreMLInferenceEngine:
     
     @staticmethod
     def _check_coreml_available() -> bool:
-        """Check if CoreML is available (macOS/iOS only)."""
         try:
             import coremltools
             import platform
             
             system = platform.system()
             if system not in ['Darwin']:  # Darwin is macOS
-                logger.warning(f"CoreML is not fully supported on {system}. "
-                              "It's optimized for macOS and iOS.")
+                logger.warning(f"CoreML is not fully supported on {system}. ")
             
             logger.info(f"CoreML available: {coremltools.__version__}")
             return True
@@ -49,16 +47,6 @@ class CoreMLInferenceEngine:
             return False
     
     def load(self, model_path: str):
-        """
-        Load CoreML model.
-        
-        Args:
-            model_path: Path to .mlmodel file
-            
-        Raises:
-            FileNotFoundError: If model file doesn't exist
-            RuntimeError: If CoreML is not available
-        """
         import os
         
         if not os.path.exists(model_path):
@@ -74,7 +62,6 @@ class CoreMLInferenceEngine:
             self.model = ct.models.MLModel(model_path)
             self.model_path = model_path
             
-            # Log model information
             self._log_model_info()
             
         except Exception as e:
@@ -88,7 +75,6 @@ class CoreMLInferenceEngine:
         logger.info(f"Model loaded successfully")
         logger.info(f"Model type: {type(self.model)}")
         
-        # Try to get input/output info
         try:
             if hasattr(self.model, 'input_description'):
                 logger.info(f"Inputs: {self.model.input_description}")
@@ -98,36 +84,27 @@ class CoreMLInferenceEngine:
             logger.debug(f"Could not get model I/O info: {e}")
     
     def get_input_shape(self) -> Optional[Tuple]:
-        """
-        Get input shape from model.
-        
-        Returns:
-            Tuple representing input shape, or None if not available
-        """
         if not self.model:
             return None
         
         try:
-            # CoreML model spec structure
             spec = self.model.spec
             
             if spec and spec.description:
                 input_desc = spec.description.input
                 if input_desc:
-                    # Get the first input
                     first_input = input_desc[0]
                     
                     if hasattr(first_input, 'type'):
                         input_type = first_input.type
                         
-                        # Handle different input types
                         if hasattr(input_type, 'multiArrayType'):
                             shape = tuple(input_type.multiArrayType.shape)
                             logger.debug(f"Input shape: {shape}")
                             return shape
                         
                         elif hasattr(input_type, 'imageType'):
-                            # Image input
+
                             img_type = input_type.imageType
                             if img_type:
                                 height = img_type.height
@@ -140,12 +117,6 @@ class CoreMLInferenceEngine:
         return None
     
     def create_sample_input(self) -> Optional[np.ndarray]:
-        """
-        Create sample input for inference.
-        
-        Returns:
-            NumPy array with sample input data
-        """
         shape = self.get_input_shape()
         
         if shape is None:
@@ -153,7 +124,6 @@ class CoreMLInferenceEngine:
             return None
         
         try:
-            # Create random input normalized to 0-1
             sample_input = np.random.rand(*shape).astype(np.float32)
             return sample_input
         
@@ -162,28 +132,13 @@ class CoreMLInferenceEngine:
             return None
     
     def run_inference(self, input_data: np.ndarray) -> Any:
-        """
-        Run inference on the model.
-        
-        Args:
-            input_data: Input data as numpy array or dict
-            
-        Returns:
-            Model output
-            
-        Raises:
-            RuntimeError: If model not loaded or inference fails
-        """
         if not self.model:
             raise RuntimeError("Model not loaded. Call load() first.")
         
         try:
-            # Handle different input formats
             if isinstance(input_data, np.ndarray):
-                # Convert numpy array to appropriate format
                 output = self._run_with_array_input(input_data)
             elif isinstance(input_data, dict):
-                # Dictionary input
                 output = self.model.predict(input_data)
             else:
                 raise ValueError(f"Unsupported input type: {type(input_data)}")
@@ -194,15 +149,6 @@ class CoreMLInferenceEngine:
             raise RuntimeError(f"Inference failed: {e}")
     
     def _run_with_array_input(self, input_data: np.ndarray) -> Any:
-        """
-        Run inference with numpy array input.
-        
-        Args:
-            input_data: Input numpy array
-            
-        Returns:
-            Model output
-        """
         import coremltools.models.datatypes as datatypes
         
         spec = self.model.spec
@@ -212,7 +158,6 @@ class CoreMLInferenceEngine:
         input_desc = spec.description.input[0]
         input_name = input_desc.name
         
-        # Prepare input based on type
         input_dict = {}
         
         if hasattr(input_desc.type, 'multiArrayType'):
@@ -220,19 +165,15 @@ class CoreMLInferenceEngine:
             input_dict[input_name] = input_data
         
         elif hasattr(input_desc.type, 'imageType'):
-            # Image input - convert from array
             from PIL import Image
             
-            # Ensure input is in correct format
             if input_data.dtype != np.uint8:
-                # Normalize to 0-255 if needed
                 input_data = (input_data * 255).astype(np.uint8)
             
-            # Create PIL image
             if len(input_data.shape) == 3:
                 img = Image.fromarray(input_data)
             else:
-                # Handle grayscale or other formats
+                # handling for grayscale or other formats
                 img = Image.fromarray(input_data[0] if len(input_data.shape) == 4 else input_data)
             
             input_dict[input_name] = img
@@ -252,17 +193,15 @@ class CoreMLInferenceEngine:
         Returns:
             List of available compute unit names
         """
-        available = ['CPU']  # CPU is always available
+        available = ['CPU']
         
         try:
             import platform
             system = platform.system()
             
-            # Check for GPU (on macOS with Metal support)
             if system == 'Darwin':
                 available.append('GPU')
                 
-                # Check for Neural Engine (Apple Silicon)
                 import subprocess
                 try:
                     result = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'],
@@ -278,12 +217,6 @@ class CoreMLInferenceEngine:
         return available
     
     def get_model_size(self) -> Optional[int]:
-        """
-        Get model size in bytes.
-        
-        Returns:
-            Model file size in bytes, or None if not available
-        """
         if not self.model_path:
             return None
         
@@ -294,7 +227,6 @@ class CoreMLInferenceEngine:
             return None
     
     def cleanup(self):
-        """Cleanup resources."""
         self.model = None
         self.model_path = None
         logger.info("CoreML model cleaned up")
