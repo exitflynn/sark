@@ -284,15 +284,15 @@ class InMemoryStore:
                         'FileSize': result.get('FileSize', 0),
                         'ComputeUnits': result.get('ComputeUnits', ''),
                         
-                        # From worker
-                        'DeviceName': worker.get('device_name', 'Unknown') if worker else 'Unknown',
-                        'DeviceYear': worker.get('device_year', '') if worker else '',
-                        'Soc': worker.get('soc', '') if worker else '',
-                        'Ram': worker.get('ram_gb', 0) if worker else 0,
-                        'DiscreteGpu': worker.get('discrete_gpu', '') if worker else '',
-                        'VRam': worker.get('vram', '') if worker else '',
-                        'DeviceOs': worker.get('os', '') if worker else '',
-                        'DeviceOsVersion': worker.get('os_version', '') if worker else '',
+                        # From result - device info (prefer result over worker object)
+                        'DeviceName': result.get('DeviceName') or (worker.get('device_name', 'Unknown') if worker else 'Unknown'),
+                        'DeviceYear': result.get('DeviceYear') or (worker.get('device_year', '') if worker else ''),
+                        'Soc': result.get('Soc') or (worker.get('soc', '') if worker else ''),
+                        'Ram': result.get('Ram') or (worker.get('ram_gb', 0) if worker else 0),
+                        'DiscreteGpu': result.get('DiscreteGpu') or (worker.get('discrete_gpu', '') if worker else ''),
+                        'VRam': result.get('VRam') or (worker.get('vram', '') if worker else ''),
+                        'DeviceOs': result.get('DeviceOs') or (worker.get('os', '') if worker else ''),
+                        'DeviceOsVersion': result.get('DeviceOsVersion') or (worker.get('os_version', '') if worker else ''),
                         
                         # From result - benchmark metrics
                         'LoadMsMedian': result.get('LoadMsMedian', ''),

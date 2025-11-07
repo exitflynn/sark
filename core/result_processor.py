@@ -141,6 +141,7 @@ class ResultProcessor:
             campaign_id = result.get('campaign_id')
             status = result.get('status', 'Unknown')
             
+            logger.info(f"Processing result for job {job_id}: status={status}, DeviceName={result.get('DeviceName')}, Soc={result.get('Soc')}, Ram={result.get('Ram')}")
             logger.debug(f"Processing result for job {job_id}: {status}")
             
             # Save result to store

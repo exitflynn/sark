@@ -25,7 +25,7 @@ redis-server --daemonize yes --port 6379 --bind 0.0.0.0 --protected-mode no
 
 for i in {1..30}; do
     if redis-cli -h localhost ping 2>/dev/null | grep -q PONG; then
-        echo "✅ Redis ready!"
+        echo "Redis ready!"
         break
     fi
     sleep 1

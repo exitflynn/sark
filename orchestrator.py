@@ -26,45 +26,28 @@ logger = logging.getLogger(__name__)
 
 def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
                store_file: str = 'orchestrator_state.json') -> Flask:
-    """
-    Create and configure Flask application.
-    
-    Args:
-        redis_host: Redis host
-        redis_port: Redis port
-        store_file: Path to state persistence file
-        
-    Returns:
-        Configured Flask app
-    """
     app = Flask(__name__)
     
-    # Initialize store
     store = InMemoryStore(persistence_file=store_file)
-    logger.info(f"✅ Initialized in-memory store with persistence to {store_file}")
+    logger.info(f"Initialized in-memory store with persistence to {store_file}")
     
-    # Initialize Redis client
     redis_client = RedisClient(host=redis_host, port=redis_port)
     
     if not redis_client.is_connected():
-        logger.warning("⚠️  Redis not available. Some features will be limited.")
+        logger.warning("Redis not available. Some features will be limited.")
     else:
-        logger.info(f"✅ Connected to Redis at {redis_host}:{redis_port}")
+        logger.info(f"Connected to Redis at {redis_host}:{redis_port}")
     
-    # Initialize job dispatcher
     job_dispatcher = JobDispatcher(redis_client)
-    logger.info("✅ Initialized job dispatcher")
+    logger.info("Initialized job dispatcher")
     
-    # Initialize result processor
     result_processor = ResultProcessor(store, redis_client)
     result_processor.start()
     
-    # Initialize health monitor
     health_monitor = HealthMonitor(store, heartbeat_timeout=60, check_interval=10)
     health_monitor.start()
-    logger.info("✅ Initialized health monitor")
+    logger.info("Initialized health monitor")
     
-    # Initialize retry manager with exponential backoff (Phase 4)
     retry_policy = RetryPolicy(
         max_attempts=3,
         initial_delay=1.0,
@@ -73,15 +56,14 @@ def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
         jitter=True
     )
     retry_manager = RetryManager(policy=retry_policy)
-    logger.info("✅ Initialized retry manager with exponential backoff")
+    logger.info("Initialized retry manager with exponential backoff")
     
-    # Initialize job timeout handler with retry support
     job_timeout_handler = JobTimeoutHandler(store, redis_client, 
                                            default_timeout=3600, 
                                            check_interval=5,
                                            retry_manager=retry_manager)
     job_timeout_handler.start()
-    logger.info("✅ Initialized job timeout handler with retry")
+    logger.info("Initialized job timeout handler with retry")
     
     # Initialize endpoints with store, redis, and job dispatcher references
     init_endpoints(store, redis_client, job_dispatcher)
