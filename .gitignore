@@ -8,6 +8,7 @@ env/
 venv/
 ENV/
 build/
+docs/
 develop-eggs/
 dist/
 downloads/
@@ -22,6 +23,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.md
 
 # IDE
 .vscode/

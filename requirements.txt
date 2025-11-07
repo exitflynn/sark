@@ -1,4 +1,4 @@
-# CycleOPS Orchestrator Server Dependencies
+# Sark Server Dependencies
 
 # Web framework
 flask>=3.0.0
