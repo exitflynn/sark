@@ -228,68 +228,82 @@ def update_worker_status(worker_id: str) -> Tuple[dict, int]:
         return jsonify({'error': str(e)}), 500
 
 
-# ========== Job Management ==========
+# ========== Campaign Management ==========
 
-@api_bp.route('/jobs', methods=['POST'])
-def create_job() -> Tuple[dict, int]:
-    """Create a new job."""
+@api_bp.route('/campaigns', methods=['POST'])
+def create_campaign() -> Tuple[dict, int]:
+    """Create a new campaign."""
     try:
         data = request.get_json()
         
         # Validate required fields
-        if 'model_url' not in data:
-            return jsonify({'error': 'Missing model_url'}), 400
+        if 'model_url' not in data or 'jobs' not in data:
+            return jsonify({'error': 'Missing model_url or jobs'}), 400
         
-        compute_unit = data.get('compute_unit', 'CPU')
-        num_inference_runs = data.get('num_inference_runs', 10)
-        device_id = data.get('device_id')  # Optional: specific device
+        # Generate campaign ID
+        campaign_id = f"campaign-{int(datetime.utcnow().timestamp())}"
         
-        # If device_id is specified, validate it exists
-        if device_id:
-            worker = store.get_worker(device_id)
-            if not worker:
-                return jsonify({'error': f'Device {device_id} not found'}), 404
-        
-        # Generate job ID
-        job_id = f"job-{uuid.uuid4().hex[:12]}"
-        
-        job_info = {
-            'job_id': job_id,
+        # Prepare campaign info with jobs array for tracking
+        jobs_array = []
+        campaign_info = {
+            'campaign_id': campaign_id,
             'model_url': data['model_url'],
-            'compute_unit': compute_unit,
-            'device_id': device_id,  # None if not specified, then any device with capability
-            'num_inference_runs': num_inference_runs,
-            'status': 'pending'
+            'total_jobs': len(data['jobs']),
+            'jobs': jobs_array  # Will be populated below
         }
         
-        # Create job in store
-        store.create_job(job_info)
+        # Create campaign
+        store.create_campaign(campaign_info)
         
-        # Push to appropriate Redis queue
-        if job_dispatcher:
-            job_dispatcher.push_job_to_queues(job_info)
-        else:
-            # Fallback: push manually
-            if device_id:
-                queue_name = f"jobs:{device_id}"
+        # Create jobs and push to Redis queues
+        for i, job_spec in enumerate(data['jobs']):
+            job_id = f"{campaign_id}-job-{i}"
+            compute_unit = job_spec.get('compute_unit', 'CPU')
+            
+            job_info = {
+                'job_id': job_id,
+                'campaign_id': campaign_id,
+                'model_url': data['model_url'],
+                'compute_unit': compute_unit,
+                'worker_id': job_spec.get('worker_id'),
+                'num_inference_runs': job_spec.get('num_inference_runs', 10)
+            }
+            
+            # Create job in store
+            store.create_job(job_info)
+            
+            # Add to campaign's job tracking
+            jobs_array.append({
+                'job_id': job_id,
+                'compute_unit': compute_unit,
+                'status': 'pending'
+            })
+            
+            # Push to appropriate Redis queue using job dispatcher
+            if job_dispatcher:
+                job_dispatcher.push_job_to_queues(job_info)
             else:
-                queue_name = f"jobs:capability:{compute_unit}"
-            redis_client.push_job(queue_name, job_id)
-            logger.debug(f"Queued job {job_id} to {queue_name}")
+                # Fallback: push manually
+                if job_spec.get('worker_id'):
+                    queue_name = f"jobs:{job_spec['worker_id']}"
+                else:
+                    queue_name = f"jobs:capability:{compute_unit}"
+                redis_client.push_job(queue_name, job_id)
+                logger.debug(f"Queued job {job_id} to {queue_name}")
         
-        logger.info(f"✅ Created job {job_id} (compute_unit={compute_unit}, device={device_id or 'any'})")
+        logger.info(f"✅ Created campaign {campaign_id} with {len(data['jobs'])} jobs")
+        for i, job in enumerate(jobs_array):
+            logger.info(f"   Job {i+1}: {job['job_id']} (compute_unit={job['compute_unit']})")
         
         return jsonify({
-            'job_id': job_id,
-            'model_url': data['model_url'],
-            'compute_unit': compute_unit,
-            'device_id': device_id,
-            'num_inference_runs': num_inference_runs,
-            'status': 'pending'
+            'campaign_id': campaign_id,
+            'total_jobs': len(data['jobs']),
+            'status': 'running',
+            'jobs': jobs_array
         }), 200
     
     except Exception as e:
-        logger.error(f"Error creating job: {e}")
+        logger.error(f"Error creating campaign: {e}")
         return jsonify({'error': str(e)}), 500
 
 
