@@ -555,15 +555,15 @@
             </div>
         </div>
 
-        <!-- Jobs Section -->
+        <!-- Campaigns Section -->
         <div class="campaigns-section">
             <div class="button-group">
-                <button onclick="openCreateJobModal()">[ NEW JOB ]</button>
+                <button onclick="openCreateCampaignModal()">[ NEW CAMPAIGN ]</button>
                 <button onclick="resetAllData()" style="background: linear-gradient(135deg, rgba(255, 0, 100, 0.2) 0%, rgba(255, 0, 64, 0.1) 100%); border-color: rgba(255, 0, 100, 0.5); color: #ff0064;">[ RESET DATA ]</button>
             </div>
             <div class="section-title">
                 <span>&gt;</span>
-                RECENT JOBS
+                CAMPAIGNS
             </div>
             <div id="campaigns-container">
                 <div class="loading">
@@ -574,10 +574,10 @@
         </div>
     </div>
 
-    <!-- Create Job Modal -->
+    <!-- Create Campaign Modal -->
     <div class="modal" id="createCampaignModal">
         <div class="modal-content">
-            <div class="modal-header">CREATE NEW JOB</div>
+            <div class="modal-header">CREATE NEW CAMPAIGN</div>
             <div class="form-group">
                 <label>Model URL</label>
                 <input type="text" id="modelUrl" placeholder="https://example.com/model.onnx or local path">
@@ -591,9 +591,9 @@
                 <select id="computeUnit">
                     <option value="">Auto-select (recommended)</option>
                     <option value="CPU">CPU</option>
-                    <option value="GPU">GPU (CUDA)</option>
+                    <option value="CUDA">CUDA (GPU)</option>
+                    <option value="DML">DirectML (Windows GPU)</option>
                     <option value="NEURAL_ENGINE">Neural Engine (Apple)</option>
-                    <option value="CoreML">CoreML (Apple)</option>
                 </select>
             </div>
             <div class="form-group">
@@ -604,7 +604,7 @@
             </div>
             <div class="modal-footer">
                 <button onclick="closeCreateCampaignModal()" style="background: linear-gradient(135deg, rgba(0, 148, 255, 0.1) 0%, rgba(0, 94, 255, 0.05) 100%); border-color: rgba(0, 148, 255, 0.3);">CANCEL</button>
-                <button onclick="createJob()">SUBMIT</button>
+                <button onclick="createCampaign()">SUBMIT</button>
             </div>
         </div>
     </div>
@@ -655,7 +655,8 @@
                 .then(r => r.json())
                 .then(data => {
                     document.getElementById('campaign-count').textContent = data.count || 0;
-                });
+                })
+                .catch(e => console.error('Error fetching campaign count:', e));
         }
 
         function loadWorkers() {
@@ -735,10 +736,14 @@
                 .then(r => r.json())
                 .then(data => {
                     const container = document.getElementById('campaigns-container');
+                    
+                    // Handle campaigns response format
                     const campaigns = data.campaigns || [];
                     
-                    if (campaigns.length === 0) {
-                        container.innerHTML = '<div class="no-data">No jobs created yet</div>';
+                    console.log('Loaded campaigns:', campaigns);
+                    
+                    if (!Array.isArray(campaigns) || campaigns.length === 0) {
+                        container.innerHTML = '<div class="no-data">No campaigns created yet</div>';
                         return;
                     }
 
@@ -752,7 +757,7 @@
                         const status = campaign.status || 'running';
                         
                         // Log for debugging
-                        console.log(`Campaign ${campaign.campaign_id}: status="${status}", progress=${progress}%`);
+                        console.log(`Campaign ${campaign.campaign_id}: status="${status}", progress=${progress}%`, campaign);
                         
                         // Determine if download is available (check multiple status values for compatibility)
                         const downloadReady = ['completed', 'complete', 'partial'].includes(status);
@@ -777,6 +782,10 @@
                     
                     html += '</tbody></table>';
                     container.innerHTML = html;
+                })
+                .catch(e => {
+                    console.error('Error loading campaigns:', e);
+                    document.getElementById('campaigns-container').innerHTML = `<div class="no-data">Error loading campaigns: ${e.message}</div>`;
                 });
         }
 
@@ -905,13 +914,10 @@
             document.getElementById('modelUrl').value = '';
             document.getElementById('numInferenceRuns').value = '10';
             document.getElementById('computeUnit').value = '';
+            document.getElementById('deviceSelect').value = '';
         }
 
-        function createCampaignModal() {
-            document.getElementById('createCampaignModal').classList.add('active');
-        }
-
-        function createJob() {
+        function createCampaign() {
             const modelUrl = document.getElementById('modelUrl').value;
             const numRuns = parseInt(document.getElementById('numInferenceRuns').value);
             const computeUnit = document.getElementById('computeUnit').value;
@@ -922,42 +928,41 @@
                 return;
             }
 
-            const jobData = {
+            const campaignData = {
                 model_url: modelUrl,
-                compute_unit: computeUnit || 'CPU',
-                num_inference_runs: numRuns
+                num_runs: numRuns,
+                jobs: [{
+                    compute_unit: computeUnit || undefined,
+                    num_inference_runs: numRuns
+                }]
             };
 
             // Add device_id if specified
             if (deviceId) {
-                jobData.device_id = deviceId;
+                campaignData.device_id = deviceId;
             }
 
-            fetch(`${API_BASE}/jobs`, {
+            fetch(`${API_BASE}/campaigns`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(jobData)
+                body: JSON.stringify(campaignData)
             })
             .then(r => {
                 if (!r.ok) {
-                    return r.json().then(err => Promise.reject(err.error || 'Failed to create job'));
+                    return r.json().then(err => Promise.reject(err.error || 'Failed to create campaign'));
                 }
                 return r.json();
             })
             .then(data => {
-                alert(`SUCCESS: Job created: ${data.job_id}\nDevice: ${data.device_id || 'Any matching device'}`);
+                alert(`SUCCESS: Campaign created: ${data.campaign_id}`);
                 closeCreateCampaignModal();
                 loadCampaigns();
             })
             .catch(e => alert(`ERROR: ${e}`));
         }
 
-        function createCampaignModal() {
-            document.getElementById('createCampaignModal').classList.add('active');
-        }
-
         function resetAllData() {
-            if (!confirm('WARNING: This will delete ALL data (workers, jobs, results). Continue?')) {
+            if (!confirm('WARNING: This will delete ALL data (workers, campaigns, results). Continue?')) {
                 return;
             }
 
@@ -967,7 +972,7 @@
             })
             .then(r => r.json())
             .then(data => {
-                alert(`SUCCESS: Data reset complete!\n- Workers cleared: ${data.workers_cleared}\n- Jobs cleared: ${data.jobs_cleared}\n- Results cleared: ${data.results_cleared}`);
+                alert(`SUCCESS: Data reset complete!\n- Workers cleared: ${data.workers_cleared}\n- Campaigns cleared: ${data.campaigns_cleared}\n- Results cleared: ${data.results_cleared}`);
                 refreshDashboard();
             })
             .catch(e => alert(`ERROR: Error resetting data: ${e}`));
