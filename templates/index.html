@@ -524,7 +524,7 @@
                     PENDING CAMPAIGNS
                 </div>
                 <div class="stat-value" id="pending-campaigns-count">-</div>
-                <div class="stat-label">Awaiting their turn</div>
+                <div class="stat-label">Could've been worse...</div>
             </div>
 
             <div class="card">
@@ -559,12 +559,14 @@
         <div class="campaigns-section">
             <div class="button-group">
                 <button onclick="openCreateCampaignModal()">[ NEW CAMPAIGN ]</button>
-                <button onclick="downloadAllResults()" style="background: linear-gradient(135deg, rgba(0, 150, 200, 0.2) 0%, rgba(0, 120, 200, 0.1) 100%); border-color: rgba(0, 150, 200, 0.5); color: #0096c8;">[ DOWNLOAD ALL RESULTS ]</button>
                 <button onclick="resetAllData()" style="background: linear-gradient(135deg, rgba(255, 0, 100, 0.2) 0%, rgba(255, 0, 64, 0.1) 100%); border-color: rgba(255, 0, 100, 0.5); color: #ff0064;">[ RESET DATA ]</button>
             </div>
-            <div class="section-title">
-                <span>&gt;</span>
-                CAMPAIGNS
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span>&gt;</span>
+                    CAMPAIGNS
+                </div>
+                <button onclick="downloadAllResults()">[ DOWNLOAD ALL RESULTS ]</button>
             </div>
             <div id="campaigns-container">
                 <div class="loading">
@@ -677,7 +679,9 @@
                 .then(r => r.json())
                 .then(data => {
                     const count = data.count || 0;
-                    const active = Object.values(data.workers || {}).filter(w => w.status === 'active').length;
+                    const active = Object.values(data.workers || {}).filter(w => 
+                        ['active', 'busy', 'cleanup'].includes(w.status?.toLowerCase())
+                    ).length;
                     document.getElementById('worker-count').textContent = count;
                     document.getElementById('worker-status').textContent = `${active} active`;
                 });
