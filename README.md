@@ -18,14 +18,16 @@ python orchestrator.py
 
 # Worker (dumont) - on separate device or terminal
 pip install git+https://github.com/exitflynn/dumont.git
-dumont start --host http://<orchestrator-ip>:5000
+dumont start --host $ORCHESTRATOR_HOST
 ```
+
+> **Note:** Replace `$ORCHESTRATOR_HOST` with the orchestrator's IP address or hostname, e.g., `http://192.168.1.100:5000`.
 
 ### First Campaign
 
 ```bash
 # Create a campaign with ONNX model
-curl -X POST http://localhost:5000/api/campaigns \
+curl -X POST $ORCHESTRATOR_HOST/api/campaigns \
   -H "Content-Type: application/json" \
   -d '{
     "model_url": "https://github.com/onnx/models/raw/refs/heads/main/validated/vision/object_detection_segmentation/tiny-yolov2/model/tinyyolov2-7.onnx",
@@ -41,16 +43,18 @@ curl -X POST http://localhost:5000/api/campaigns \
 Wait for campaign to complete, then download CSV:
 ```bash
 # List available results
-curl http://localhost:5000/api/results/files
+curl $ORCHESTRATOR_HOST/api/results/files
 
 # Download specific campaign results
-curl http://localhost:5000/api/campaigns/{campaign-id}/results > results.csv
+curl $ORCHESTRATOR_HOST/api/campaigns/{campaign-id}/results > results.csv
 ```
 
-## Example Runs
+<details>
+<summary> Example Runs</summary>
 
-# Create campaign with 3 different compute units
-curl -X POST http://localhost:5000/api/campaigns \
+### Create campaign with 3 different compute units
+```
+curl -X POST $ORCHESTRATOR_HOST/api/campaigns \
   -H "Content-Type: application/json" \
   -d '{
     "model_url": "https://github.com/onnx/models/raw/refs/heads/main/validated/vision/object_detection_segmentation/tiny-yolov2/model/tinyyolov2-7.onnx",
@@ -59,21 +63,24 @@ curl -X POST http://localhost:5000/api/campaigns \
       { "compute_unit": "GPU (ONNX)", "num_inference_runs": 10 }
     ]
   }'
-
-# Get campaign ID from response, then monitor progress
-curl http://localhost:5000/api/campaigns/campaign-xyz123
-
-# Download results when complete
-curl http://localhost:5000/api/campaigns/campaign-xyz123/results > results.csv
 ```
+
+### Get campaign ID from response, then monitor progress
+curl $ORCHESTRATOR_HOST/api/campaigns/campaign-xyz123
+
+### Download results when complete
+curl $ORCHESTRATOR_HOST/api/campaigns/campaign-xyz123/results > results.csv
+```
+
+</details>
 
 ### Multi-Device Distribution
 ```bash
 # Register multiple workers (from different machines)
-curl -X POST http://localhost:5000/api/register -d '{...}'
+curl -X POST $ORCHESTRATOR_HOST/api/register -d '{...}'
 
 # Create campaign with many jobs (auto-distributed)
-curl -X POST http://localhost:5000/api/campaigns \
+curl -X POST $ORCHESTRATOR_HOST/api/campaigns \
   -H "Content-Type: application/json" \
   -d '{
     "model_url": "...",
