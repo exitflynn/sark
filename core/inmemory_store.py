@@ -47,7 +47,7 @@ class InMemoryStore:
                 self.workers = data.get('workers', {})
                 self.campaigns = data.get('campaigns', {})
                 self.jobs = data.get('jobs', {})
-                self.results = {}
+                self.results = data.get('results', {})
         except FileNotFoundError:
             pass
         except json.JSONDecodeError:
