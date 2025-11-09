@@ -503,7 +503,7 @@
             <div class="card">
                 <div class="card-title">
                     <span class="card-icon">&gt;</span>
-                    ACTIVE WORKERS
+                    REGISTERED WORKERS
                 </div>
                 <div class="stat-value" id="worker-count">-</div>
                 <div class="stat-label" id="worker-status">Checking status...</div>
@@ -512,19 +512,19 @@
             <div class="card">
                 <div class="card-title">
                     <span class="card-icon">&gt;</span>
-                    ACTIVE CAMPAIGNS
+                    TOTAL CAMPAIGNS
                 </div>
                 <div class="stat-value" id="campaign-count">-</div>
-                <div class="stat-label">Running benchmarks</div>
+                <div class="stat-label"> Rookie numbers ngl</div>
             </div>
 
             <div class="card">
                 <div class="card-title">
                     <span class="card-icon">&gt;</span>
-                    PENDING JOBS
+                    PENDING CAMPAIGNS
                 </div>
-                <div class="stat-value" id="job-count">-</div>
-                <div class="stat-label">Waiting for execution</div>
+                <div class="stat-value" id="pending-campaigns-count">-</div>
+                <div class="stat-label">Awaiting their turn</div>
             </div>
 
             <div class="card">
@@ -545,7 +545,7 @@
         <div class="workers-section">
             <div class="section-title">
                 <span>&gt;</span>
-                REGISTERED WORKERS
+                ENROLLED WORKERS
             </div>
             <div id="workers-container">
                 <div class="loading">
@@ -646,7 +646,7 @@
                 .then(r => r.json())
                 .then(data => {
                     const count = data.count || 0;
-                    const active = Object.values(data.workers || {}).filter(w => w.status === 'ACTIVE').length;
+                    const active = Object.values(data.workers || {}).filter(w => w.status === 'active').length;
                     document.getElementById('worker-count').textContent = count;
                     document.getElementById('worker-status').textContent = `${active} active`;
                 });
@@ -654,7 +654,10 @@
             fetch(`${API_BASE}/campaigns`)
                 .then(r => r.json())
                 .then(data => {
+                    const campaigns = data.campaigns || [];
+                    const pendingCount = campaigns.filter(c => c.status === 'running').length;
                     document.getElementById('campaign-count').textContent = data.count || 0;
+                    document.getElementById('pending-campaigns-count').textContent = pendingCount;
                 })
                 .catch(e => console.error('Error fetching campaign count:', e));
         }
@@ -686,49 +689,19 @@
                         const workerId = `worker-${id}`;
                         window[workerId] = worker;
                         
-                        // Different button based on status
-                        let actionButton = '';
-                        if (status === 'faulty') {
-                            actionButton = `<button onclick="resetWorker('${id}', '${worker.device_name}')">[ RESET ]</button>`;
-                        } else {
-                            actionButton = `<button onclick="showWorkerDetails('${id}', window['worker-${id}'])">[ DETAILS ]</button>`;
-                        }
-                        
                         html += `<tr>
                             <td>${worker.device_name}</td>
                             <td><span class="status-badge ${statusClass}">${status.toUpperCase()}</span></td>
                             <td>${caps}</td>
                             <td>${ram}</td>
                             <td>${os}</td>
-                            <td>${actionButton}</td>
+                            <td><button onclick="showWorkerDetails('${id}', window['worker-${id}'])">[ DETAILS ]</button></td>
                         </tr>`;
                     });
                     
                     html += '</tbody></table>';
                     container.innerHTML = html;
                 });
-        }
-
-        function resetWorker(workerId, deviceName) {
-            if (!confirm(`Reset worker "${deviceName}" from faulty state to active?\n\nThis will allow it to accept new jobs.`)) {
-                return;
-            }
-
-            fetch(`${API_BASE}/workers/${workerId}/reset`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.error) {
-                    alert(`ERROR: ${data.error}`);
-                } else {
-                    alert(`SUCCESS: Worker reset: ${data.message}`);
-                    loadWorkers();
-                }
-            })
-            .catch(e => alert(`ERROR: ${e.message}`));
         }
 
         function loadCampaigns() {
@@ -747,14 +720,19 @@
                         return;
                     }
 
-                    let html = '<table><thead><tr><th>Campaign ID</th><th>Model</th><th>Total Jobs</th><th>Completed</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+                    let html = '<table><thead><tr><th>Campaign ID</th><th>Model</th><th>Device</th><th>Compute Unit</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
                     
                     campaigns.forEach(campaign => {
-                        const completed = campaign.completed_jobs || 0;
+                        const jobs = campaign.jobs || [];
                         const total = campaign.total_jobs || 0;
+                        const completed = campaign.completed_jobs || 0;
+                        const pending = total - completed;
                         const progress = total > 0 ? (completed / total * 100) : 0;
                         const filename = campaign.model_url?.split('/').pop() || 'Unknown';
                         const status = campaign.status || 'running';
+                        
+                        const deviceName = jobs.length > 0 && jobs[0].device_name ? jobs[0].device_name : '-';
+                        const computeUnit = jobs.length > 0 && jobs[0].compute_unit ? jobs[0].compute_unit : '-';
                         
                         // Log for debugging
                         console.log(`Campaign ${campaign.campaign_id}: status="${status}", progress=${progress}%`, campaign);
@@ -768,8 +746,8 @@
                         html += `<tr>
                             <td>${campaign.campaign_id}</td>
                             <td>${filename}</td>
-                            <td>${total}</td>
-                            <td>${completed}</td>
+                            <td><small>${deviceName}</small></td>
+                            <td><small>${computeUnit}</small></td>
                             <td>
                                 <div class="progress-bar">
                                     <div class="progress-fill" style="width: ${progress}%"></div>

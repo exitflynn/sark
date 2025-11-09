@@ -330,6 +330,24 @@ def get_campaigns() -> Tuple[dict, int]:
     """Get all campaigns."""
     try:
         campaigns = store.get_all_campaigns()
+        
+        for campaign in campaigns:
+            campaign_id = campaign.get('campaign_id')
+            jobs = store.get_jobs_by_campaign(campaign_id)
+            
+            if jobs:
+                for job in jobs:
+                    result = store.get_result(job['job_id'])
+                    if result:
+                        job['device_name'] = result.get('DeviceName', '-')
+                        job['compute_unit'] = result.get('ComputeUnits', job.get('compute_unit', '-'))
+                        break
+                    else:
+                        job['device_name'] = '-'
+                        job['compute_unit'] = job.get('compute_unit', '-')
+                
+                campaign['jobs'] = jobs
+        
         return jsonify({
             'count': len(campaigns),
             'campaigns': campaigns

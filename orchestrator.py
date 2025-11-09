@@ -5,7 +5,6 @@ HTTP API server for managing distributed benchmarking campaigns.
 
 import logging
 import argparse
-from typing import Optional
 from flask import Flask, render_template
 from core.inmemory_store import InMemoryStore
 from core.redis_client import RedisClient
@@ -26,25 +25,18 @@ logger = logging.getLogger(__name__)
 
 
 def create_app(redis_host: str = 'localhost', redis_port: int = 6379,
-               redis_password: Optional[str] = None, redis_ssl: bool = False,
                store_file: str = 'orchestrator_state.json') -> Flask:
     app = Flask(__name__)
     
     store = InMemoryStore(persistence_file=store_file)
     logger.info(f"Initialized in-memory store with persistence to {store_file}")
     
-    redis_client = RedisClient(
-        host=redis_host, 
-        port=redis_port,
-        password=redis_password,
-        ssl=redis_ssl
-    )
+    redis_client = RedisClient(host=redis_host, port=redis_port)
     
     if not redis_client.is_connected():
         logger.warning("Redis not available. Some features will be limited.")
     else:
-        ssl_info = " (SSL)" if redis_ssl else ""
-        logger.info(f"Connected to Redis at {redis_host}:{redis_port}{ssl_info}")
+        logger.info(f"Connected to Redis at {redis_host}:{redis_port}")
     
     job_dispatcher = JobDispatcher(redis_client)
     logger.info("Initialized job dispatcher")
@@ -143,17 +135,6 @@ def main():
         help='Redis port (default: 6379)'
     )
     parser.add_argument(
-        '--redis-password',
-        type=str,
-        default=None,
-        help='Redis password (optional, for authenticated Redis)'
-    )
-    parser.add_argument(
-        '--redis-ssl',
-        action='store_true',
-        help='Enable SSL/TLS for Redis connection (for AWS ElastiCache, etc.)'
-    )
-    parser.add_argument(
         '--state-file',
         type=str,
         default='orchestrator_state.json',
@@ -182,8 +163,6 @@ def main():
     app = create_app(
         redis_host=args.redis_host,
         redis_port=args.redis_port,
-        redis_password=args.redis_password,
-        redis_ssl=args.redis_ssl,
         store_file=args.state_file
     )
     

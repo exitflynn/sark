@@ -23,9 +23,10 @@ class JobDispatcher:
             logger.debug(f"Routing job {job_info.get('job_id')} to worker {worker_id}")
         
         elif compute_unit:
-            queue_name = f"jobs:capability:{compute_unit}"
+            normalized_unit = compute_unit.lower().replace(' ', '_').replace('(', '').replace(')', '')
+            queue_name = f"jobs:capability:{normalized_unit}"
             queues.append(queue_name)
-            logger.debug(f"Routing job {job_info.get('job_id')} to capability queue {compute_unit}")
+            logger.debug(f"Routing job {job_info.get('job_id')} to capability queue {normalized_unit} (from {compute_unit})")
         
         else:
             logger.warning(f"Job {job_info.get('job_id')} has no worker_id or compute_unit")
