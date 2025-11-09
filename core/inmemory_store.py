@@ -223,13 +223,17 @@ class InMemoryStore:
                 return self.jobs[job_id]['retry_count']
             return 0
     
-    # ========== Result Operations ==========
-    
     def save_result(self, result_info: Dict[str, Any]) -> None:
         """Save a result."""
+        from datetime import datetime
+        
         with self.lock:
             job_id = result_info['job_id']
             result_info['saved_at'] = time.time()
+            
+            if 'CreatedUtc' not in result_info:
+                result_info['CreatedUtc'] = datetime.utcnow().isoformat() + '+00:00'
+            
             self.results[job_id] = result_info
     
     def get_result(self, job_id: str) -> Optional[Dict[str, Any]]:
@@ -244,8 +248,6 @@ class InMemoryStore:
             return [self.results[job_id] for job_id in campaign_job_ids 
                    if job_id in self.results]
     
-    # ========== Query Operations (like SQL queries) ==========
-    
     def query_results_for_csv(self, campaign_id: str) -> List[Dict[str, Any]]:
         """
         Query results for CSV generation (joins jobs, workers, results).
@@ -256,6 +258,8 @@ class InMemoryStore:
         Returns:
             List of result rows with joined data
         """
+        from datetime import datetime
+        
         with self.lock:
             results = []
             
@@ -264,16 +268,19 @@ class InMemoryStore:
                 if job and job['campaign_id'] == campaign_id:
                     worker = self.workers.get(job.get('worker_id', ''))
                     
-                    # Combine data from multiple "tables"
+                    created_utc = result.get('CreatedUtc')
+                    if not created_utc:
+                        created_utc = datetime.utcnow().isoformat() + '+00:00'
+                    
+                    upload_id = campaign_id
+                    
                     row = {
-                        # From result
+                        'CreatedUtc': created_utc,
                         'Status': result.get('status', 'Unknown'),
-                        'JobId': job_id,
+                        'UploadId': upload_id,
                         'FileName': result.get('FileName', ''),
                         'FileSize': result.get('FileSize', 0),
-                        'ComputeUnits': result.get('ComputeUnits', ''),
                         
-                        # From result - device info (prefer result over worker object)
                         'DeviceName': result.get('DeviceName') or (worker.get('device_name', 'Unknown') if worker else 'Unknown'),
                         'DeviceYear': result.get('DeviceYear') or (worker.get('device_year', '') if worker else ''),
                         'Soc': result.get('Soc') or (worker.get('soc', '') if worker else ''),
@@ -283,7 +290,7 @@ class InMemoryStore:
                         'DeviceOs': result.get('DeviceOs') or (worker.get('os', '') if worker else ''),
                         'DeviceOsVersion': result.get('DeviceOsVersion') or (worker.get('os_version', '') if worker else ''),
                         
-                        # From result - benchmark metrics
+                        'ComputeUnits': result.get('ComputeUnits', ''),
                         'LoadMsMedian': result.get('LoadMsMedian', ''),
                         'LoadMsStdDev': result.get('LoadMsStdDev', ''),
                         'LoadMsAverage': result.get('LoadMsAverage', ''),
@@ -294,6 +301,8 @@ class InMemoryStore:
                         'InferenceMsAverage': result.get('InferenceMsAverage', ''),
                         'InferenceMsFirst': result.get('InferenceMsFirst', ''),
                         'PeakInferenceRamUsage': result.get('PeakInferenceRamUsage', ''),
+                        
+                        'JobId': job_id,
                     }
                     results.append(row)
             

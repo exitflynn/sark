@@ -86,21 +86,22 @@ class ResultProcessor:
             return None
         
         try:
-            # Create timestamp for unique filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'{campaign_id}_{timestamp}_results.csv'
             filepath = os.path.join(self.output_dir, filename)
             
-            # Get all unique keys from all results
-            all_keys = set()
-            for result in results:
-                all_keys.update(result.keys())
-            
-            fieldnames = sorted(list(all_keys))
+            fieldnames = [
+                'CreatedUtc', 'Status', 'UploadId', 'FileName', 'FileSize',
+                'DeviceName', 'DeviceYear', 'Soc', 'Ram', 'DiscreteGpu', 'VRam',
+                'DeviceOs', 'DeviceOsVersion',
+                'ComputeUnits', 'LoadMsMedian', 'LoadMsStdDev', 'LoadMsAverage',
+                'LoadMsFirst', 'PeakLoadRamUsage', 'InferenceMsMedian', 'InferenceMsStdDev',
+                'InferenceMsAverage', 'InferenceMsFirst', 'PeakInferenceRamUsage', 'JobId'
+            ]
             
             # Write CSV file
             with open(filepath, 'w', newline='') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames, restval='')
                 writer.writeheader()
                 writer.writerows(results)
             
