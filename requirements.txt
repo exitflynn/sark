@@ -1,13 +1,5 @@
 # Sark Server Dependencies
-
-# Web framework
 flask>=3.0.0
-
-# Data caching and job queuing
 redis>=5.0.0
-
-# Data processing
 pandas>=2.0.0
-
-# Logging and monitoring
 python-dotenv>=1.0.0
