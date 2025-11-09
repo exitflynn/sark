@@ -588,8 +588,8 @@
             </div>
             <div class="form-group">
                 <label>Compute Unit</label>
-                <select id="computeUnit">
-                    <option value="">Auto-select (recommended)</option>
+                <select id="computeUnit" required>
+                    <option value="">Select a compute unit</option>
                     <option value="CPU (ONNX)">CPU (ONNX)</option>
                     <option value="GPU (ONNX)">GPU (ONNX)</option>
                     <option value="GPU (CoreML)">GPU (CoreML)</option>
@@ -620,8 +620,37 @@
         </div>
     </div>
 
-    <script src="constants.js"></script>
     <script>
+        // ========== Frontend Constants - Shared with backend ==========
+        const WORKER_STATUS_ACTIVE = 'active';
+        const WORKER_STATUS_BUSY = 'busy';
+        const WORKER_STATUS_CLEANUP = 'cleanup';
+        const WORKER_STATUS_FAULTY = 'faulty';
+
+        const CAMPAIGN_STATUS_RUNNING = 'running';
+        const CAMPAIGN_STATUS_COMPLETED = 'completed';
+        const CAMPAIGN_STATUS_PARTIAL = 'partial';
+
+        // ========== Status Display Functions ==========
+        function getWorkerStatusBadgeClass(status) {
+            const normalizedStatus = status?.toLowerCase() || 'unknown';
+            switch (normalizedStatus) {
+                case WORKER_STATUS_ACTIVE:
+                    return 'status-healthy';
+                case WORKER_STATUS_BUSY:
+                    return 'status-warning';
+                case WORKER_STATUS_FAULTY:
+                case WORKER_STATUS_CLEANUP:
+                    return 'status-error';
+                default:
+                    return 'status-error';
+            }
+        }
+
+        function getCampaignIsCompleted(status) {
+            return [CAMPAIGN_STATUS_COMPLETED, CAMPAIGN_STATUS_PARTIAL].includes(status);
+        }
+
         const API_BASE = '/api';
 
         // Auto-refresh data every 5 seconds
@@ -906,11 +935,16 @@
                 return;
             }
 
+            if (!computeUnit) {
+                alert('Please select a compute unit');
+                return;
+            }
+
             const campaignData = {
                 model_url: modelUrl,
                 num_runs: numRuns,
                 jobs: [{
-                    compute_unit: computeUnit || undefined,
+                    compute_unit: computeUnit,
                     num_inference_runs: numRuns
                 }]
             };
