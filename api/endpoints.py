@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 # Blueprint for API endpoints
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
+SUPPORTED_COMPUTE_UNITS = [
+    'CPU (ONNX)',
+    'GPU (ONNX)',
+    'DirectML (ONNX)',
+    'OpenVINO (ONNX)',
+    'GPU (CoreML)',
+    'Neural Engine (CoreML)'
+]
+
 
 # Global references (will be injected by orchestrator)
 store = None
@@ -240,6 +249,14 @@ def create_campaign() -> Tuple[dict, int]:
         if 'model_url' not in data or 'jobs' not in data:
             return jsonify({'error': 'Missing model_url or jobs'}), 400
         
+        # Validate compute units in jobs
+        for i, job_spec in enumerate(data['jobs']):
+            compute_unit = job_spec.get('compute_unit', '')
+            if compute_unit and compute_unit not in SUPPORTED_COMPUTE_UNITS:
+                return jsonify({
+                    'error': f'Invalid compute_unit in job {i}: "{compute_unit}". Allowed values: {", ".join(SUPPORTED_COMPUTE_UNITS)}'
+                }), 400
+        
         # Generate campaign ID
         campaign_id = f"campaign-{int(datetime.utcnow().timestamp())}"
         
@@ -258,7 +275,7 @@ def create_campaign() -> Tuple[dict, int]:
         # Create jobs and push to Redis queues
         for i, job_spec in enumerate(data['jobs']):
             job_id = f"{campaign_id}-job-{i}"
-            compute_unit = job_spec.get('compute_unit', 'CPU')
+            compute_unit = job_spec.get('compute_unit', '')
             
             job_info = {
                 'job_id': job_id,
@@ -287,7 +304,8 @@ def create_campaign() -> Tuple[dict, int]:
                 if job_spec.get('worker_id'):
                     queue_name = f"jobs:{job_spec['worker_id']}"
                 else:
-                    queue_name = f"jobs:capability:{compute_unit}"
+                    normalized_unit = compute_unit.lower().replace(' ', '_').replace('(', '').replace(')', '')
+                    queue_name = f"jobs:capability:{normalized_unit}"
                 redis_client.push_job(queue_name, job_id)
                 logger.debug(f"Queued job {job_id} to {queue_name}")
         
@@ -460,7 +478,9 @@ def get_queue_status() -> Tuple[dict, int]:
             capabilities.update(worker.get('capabilities', []))
         
         for capability in capabilities:
-            queue_name = f"jobs:capability:{capability}"
+            # Normalize capability name to match worker queue format
+            normalized_cap = capability.lower().replace(' ', '_').replace('(', '').replace(')', '')
+            queue_name = f"jobs:capability:{normalized_cap}"
             size = redis_client.get_queue_size(queue_name)
             status['capability_queues'][capability] = size
         

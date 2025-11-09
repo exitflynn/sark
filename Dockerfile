@@ -17,11 +17,20 @@ COPY core/ ./core/
 COPY templates/ ./templates/
 
 RUN mkdir -p outputs
+
+RUN cat > /app/redis.conf << 'REDIS_CONF'
+bind 0.0.0.0
+port 6379
+protected-mode no
+daemonize yes
+replica-read-only no
+REDIS_CONF
+
 RUN cat > /app/start.sh << 'SCRIPT_EOF'
 #!/bin/bash
 set -e
 
-redis-server --daemonize yes --port 6379 --bind 0.0.0.0 --protected-mode no
+redis-server /app/redis.conf
 
 for i in {1..30}; do
     if redis-cli -h localhost ping 2>/dev/null | grep -q PONG; then
