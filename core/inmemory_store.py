@@ -10,6 +10,9 @@ import time
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from .constants import (
+    WORKER_STATUS_ACTIVE, JOB_STATUS_PENDING, JOB_STATUS_COMPLETE, JOB_STATUS_FAILED
+)
 
 
 logger = logging.getLogger(__name__)
@@ -92,7 +95,7 @@ class InMemoryStore:
         with self.lock:
             worker_id = worker_info['worker_id']
             worker_info['registered_at'] = time.time()
-            worker_info['status'] = 'active'
+            worker_info['status'] = WORKER_STATUS_ACTIVE
             worker_info['last_seen'] = time.time()
             self.workers[worker_id] = worker_info
             return worker_id
@@ -109,7 +112,7 @@ class InMemoryStore:
     def get_active_workers(self) -> List[Dict[str, Any]]:
         """Get all active workers."""
         with self.lock:
-            return [w for w in self.workers.values() if w['status'] == 'active']
+            return [w for w in self.workers.values() if w['status'] == WORKER_STATUS_ACTIVE]
     
     def update_worker_status(self, worker_id: str, status: str) -> None:
         """Update worker status."""
@@ -124,7 +127,7 @@ class InMemoryStore:
             return [
                 w for w in self.workers.values()
                 if compute_unit in w.get('capabilities', [])
-                and w['status'] == 'active'
+                and w['status'] == WORKER_STATUS_ACTIVE
             ]
     
     def create_campaign(self, campaign_info: Dict[str, Any]) -> str:

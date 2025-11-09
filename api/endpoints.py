@@ -12,6 +12,12 @@ import logging
 import hashlib
 from datetime import datetime
 from typing import Tuple, Dict, Any
+from core.constants import (
+    WORKER_STATUS_VALUES, WORKER_STATUS_ACTIVE, WORKER_STATUS_FAULTY,
+    JOB_STATUS_COMPLETE, JOB_STATUS_FAILED, JOB_STATUS_PENDING,
+    CAMPAIGN_STATUS_RUNNING, CAMPAIGN_STATUS_COMPLETED,
+    ALLOWED_COMPUTE_UNITS
+)
 
 
 logger = logging.getLogger(__name__)
@@ -19,14 +25,7 @@ logger = logging.getLogger(__name__)
 # Blueprint for API endpoints
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
-SUPPORTED_COMPUTE_UNITS = [
-    'CPU (ONNX)',
-    'GPU (ONNX)',
-    'DirectML (ONNX)',
-    'OpenVINO (ONNX)',
-    'GPU (CoreML)',
-    'Neural Engine (CoreML)'
-]
+SUPPORTED_COMPUTE_UNITS = ALLOWED_COMPUTE_UNITS
 
 
 # Global references (will be injected by orchestrator)
@@ -186,17 +185,17 @@ def register_worker() -> Tuple[dict, int]:
         
         if existing:
             # Update status to active if was faulty (recovery mechanism)
-            if existing.get('status') == 'faulty':
-                store.update_worker_status(worker_id, 'active')
+            if existing.get('status') == WORKER_STATUS_FAULTY:
+                store.update_worker_status(worker_id, WORKER_STATUS_ACTIVE)
                 logger.info(f"♻️  Re-registered worker {worker_id} ({data['device_name']}) - status recovered from faulty to active")
             else:
-                store.update_worker_status(worker_id, 'active')
+                store.update_worker_status(worker_id, WORKER_STATUS_ACTIVE)
                 logger.info(f"♻️  Worker {worker_id} ({data['device_name']}) reconnected - updated registration")
             
             return jsonify({
                 'worker_id': worker_id,
                 'status': 'updated',
-                'action': 'recovered' if existing.get('status') == 'faulty' else 'updated'
+                'action': 'recovered' if existing.get('status') == WORKER_STATUS_FAULTY else 'updated'
             }), 200
         else:
             # New worker registration
@@ -222,7 +221,7 @@ def update_worker_status(worker_id: str) -> Tuple[dict, int]:
         data = request.get_json()
         status = data.get('status')
         
-        if status not in ['active', 'busy', 'cleanup', 'faulty']:
+        if status not in WORKER_STATUS_VALUES:
             return jsonify({'error': 'Invalid status'}), 400
         
         store.update_worker_status(worker_id, status)

@@ -57,6 +57,18 @@ class RedisClient:
             )
             # Test connection
             self.redis_client.ping()
+            
+            # Check if Redis is in read-only replica mode and try to fix
+            try:
+                info = self.redis_client.info('replication')
+                role = info.get('role', 'master')
+                if role == 'slave':
+                    logger.warning(f"⚠️  Redis is in replica mode, attempting to promote to master...")
+                    self.redis_client.execute_command('REPLICAOF', 'NO', 'ONE')
+                    logger.info(f"✅ Promoted Redis to master mode")
+            except Exception as e:
+                logger.debug(f"Could not check/fix replica mode: {e}")
+            
             logger.info(f"✅ Connected to Redis at {self.host}:{self.port}")
             return True
         except Exception as e:
@@ -100,6 +112,18 @@ class RedisClient:
             self.redis_client.lpush(queue_name, job_id)
             logger.debug(f"Pushed job {job_id} to queue {queue_name}")
             return True
+        except redis.exceptions.ReadOnlyError as e:
+            logger.error(f"Redis is in read-only mode (replica). Attempting to fix...")
+            try:
+                self.redis_client.execute_command('REPLICAOF', 'NO', 'ONE')
+                logger.info("✅ Promoted Redis to master, retry operation")
+                # Retry the operation
+                self.redis_client.lpush(queue_name, job_id)
+                logger.debug(f"Pushed job {job_id} to queue {queue_name} (after promotion)")
+                return True
+            except Exception as fix_error:
+                logger.error(f"Failed to promote Redis to master: {fix_error}")
+                return False
         except Exception as e:
             logger.error(f"Failed to push job to queue: {e}")
             return False
@@ -126,6 +150,14 @@ class RedisClient:
                     logger.debug(f"Popped job from queue {queue_name}: {result}")
                     return result
             
+            return None
+        except redis.exceptions.ReadOnlyError as e:
+            logger.error(f"Redis is in read-only mode (replica). Attempting to fix...")
+            try:
+                self.redis_client.execute_command('REPLICAOF', 'NO', 'ONE')
+                logger.info("✅ Promoted Redis to master, retry operation")
+            except Exception as fix_error:
+                logger.error(f"Failed to promote Redis to master: {fix_error}")
             return None
         except Exception as e:
             logger.error(f"Failed to pop job from queues: {e}")
@@ -174,6 +206,19 @@ class RedisClient:
             self.redis_client.lpush('results', result_json)
             logger.debug(f"Pushed result for job {result_data.get('job_id')}")
             return True
+        except redis.exceptions.ReadOnlyError as e:
+            logger.error(f"Redis is in read-only mode (replica). Attempting to fix...")
+            try:
+                self.redis_client.execute_command('REPLICAOF', 'NO', 'ONE')
+                logger.info("✅ Promoted Redis to master, retry operation")
+                # Retry the operation
+                result_json = json.dumps(result_data)
+                self.redis_client.lpush('results', result_json)
+                logger.debug(f"Pushed result for job {result_data.get('job_id')} (after promotion)")
+                return True
+            except Exception as fix_error:
+                logger.error(f"Failed to promote Redis to master: {fix_error}")
+                return False
         except Exception as e:
             logger.error(f"Failed to push result: {e}")
             return False

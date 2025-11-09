@@ -620,6 +620,7 @@
         </div>
     </div>
 
+    <script src="constants.js"></script>
     <script>
         const API_BASE = '/api';
 
@@ -679,8 +680,7 @@
                     Object.entries(workers).forEach(([id, worker]) => {
                         // Normalize status to lowercase for comparison
                         const status = worker.status?.toLowerCase() || 'unknown';
-                        const statusClass = status === 'active' ? 'status-healthy' : 
-                                          status === 'busy' ? 'status-warning' : 'status-error';
+                        const statusClass = getWorkerStatusBadgeClass(status);
                         const caps = (worker.capabilities || []).join(', ') || 'N/A';
                         const ram = worker.device_info?.Ram ? `${worker.device_info.Ram}GB` : 'N/A';
                         const os = worker.device_info?.DeviceOs || 'N/A';
@@ -737,8 +737,8 @@
                         // Log for debugging
                         console.log(`Campaign ${campaign.campaign_id}: status="${status}", progress=${progress}%`, campaign);
                         
-                        // Determine if download is available (check multiple status values for compatibility)
-                        const downloadReady = ['completed', 'complete', 'partial'].includes(status);
+                        // Determine if download is available using constants
+                        const downloadReady = getCampaignIsCompleted(status);
                         const downloadButton = !downloadReady 
                             ? '<button disabled style="opacity: 0.5; cursor: not-allowed;">[ PENDING ]</button>'
                             : `<button onclick="downloadResults('${campaign.campaign_id}', '${campaign.campaign_id}')">[ DOWNLOAD ]</button>`;
@@ -813,7 +813,7 @@
                     </div>
                     <div class="metric-row">
                         <span class="metric-label">Status:</span>
-                        <span class="metric-value"><span class="status-badge ${worker.status?.toLowerCase() === 'active' ? 'status-healthy' : 'status-warning'}">${worker.status?.toUpperCase() || 'UNKNOWN'}</span></span>
+                        <span class="metric-value"><span class="status-badge ${getWorkerStatusBadgeClass(worker.status?.toLowerCase())}">${worker.status?.toUpperCase() || 'UNKNOWN'}</span></span>
                     </div>
                     <div class="metric-row">
                         <span class="metric-label">IP Address:</span>
