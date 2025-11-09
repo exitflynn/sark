@@ -308,6 +308,55 @@ class InMemoryStore:
             
             return results
     
+    def query_all_results_for_csv(self) -> List[Dict[str, Any]]:
+        from datetime import datetime
+        
+        with self.lock:
+            results = []
+            
+            for job_id, result in self.results.items():
+                job = self.jobs.get(job_id)
+                if job:
+                    worker = self.workers.get(job.get('worker_id', ''))
+                    campaign_id = job.get('campaign_id', '')
+                    
+                    created_utc = result.get('CreatedUtc')
+                    if not created_utc:
+                        created_utc = datetime.utcnow().isoformat() + '+00:00'
+                    
+                    upload_id = campaign_id
+                    
+                    row = {
+                        'CreatedUtc': created_utc,
+                        'Status': result.get('status', 'Unknown'),
+                        'UploadId': upload_id,
+                        'FileName': result.get('FileName', ''),
+                        'FileSize': result.get('FileSize', 0),
+                        'DeviceName': result.get('DeviceName') or (worker.get('device_name', 'Unknown') if worker else 'Unknown'),
+                        'DeviceYear': result.get('DeviceYear') or (worker.get('device_year', '') if worker else ''),
+                        'Soc': result.get('Soc') or (worker.get('soc', '') if worker else ''),
+                        'Ram': result.get('Ram') or (worker.get('ram_gb', 0) if worker else 0),
+                        'DiscreteGpu': result.get('DiscreteGpu') or (worker.get('discrete_gpu', '') if worker else ''),
+                        'VRam': result.get('VRam') or (worker.get('vram', '') if worker else ''),
+                        'DeviceOs': result.get('DeviceOs') or (worker.get('os', '') if worker else ''),
+                        'DeviceOsVersion': result.get('DeviceOsVersion') or (worker.get('os_version', '') if worker else ''),
+                        'ComputeUnits': result.get('ComputeUnits', ''),
+                        'LoadMsMedian': result.get('LoadMsMedian', ''),
+                        'LoadMsStdDev': result.get('LoadMsStdDev', ''),
+                        'LoadMsAverage': result.get('LoadMsAverage', ''),
+                        'LoadMsFirst': result.get('LoadMsFirst', ''),
+                        'PeakLoadRamUsage': result.get('PeakLoadRamUsage', ''),
+                        'InferenceMsMedian': result.get('InferenceMsMedian', ''),
+                        'InferenceMsStdDev': result.get('InferenceMsStdDev', ''),
+                        'InferenceMsAverage': result.get('InferenceMsAverage', ''),
+                        'InferenceMsFirst': result.get('InferenceMsFirst', ''),
+                        'PeakInferenceRamUsage': result.get('PeakInferenceRamUsage', ''),
+                        'JobId': job_id,
+                    }
+                    results.append(row)
+            
+            return results
+    
     def force_save(self) -> None:
         """Force immediate save to disk."""
         self._save_to_disk()

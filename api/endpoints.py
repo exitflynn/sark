@@ -443,6 +443,42 @@ def get_campaign_results(campaign_id: str) -> Tuple[dict, int]:
         return jsonify({'error': str(e)}), 500
 
 
+@api_bp.route('/results/all', methods=['GET'])
+def get_all_results() -> Tuple[dict, int]:
+    try:
+        results = store.query_all_results_for_csv()
+        
+        if not results:
+            return jsonify({'error': 'No results available'}), 404
+        
+        output = io.StringIO()
+        fieldnames = [
+            'CreatedUtc', 'Status', 'UploadId', 'FileName', 'FileSize',
+            'DeviceName', 'DeviceYear', 'Soc', 'Ram', 'DiscreteGpu', 'VRam',
+            'DeviceOs', 'DeviceOsVersion',
+            'ComputeUnits', 'LoadMsMedian', 'LoadMsStdDev', 'LoadMsAverage',
+            'LoadMsFirst', 'PeakLoadRamUsage', 'InferenceMsMedian', 'InferenceMsStdDev',
+            'InferenceMsAverage', 'InferenceMsFirst', 'PeakInferenceRamUsage', 'JobId'
+        ]
+        
+        writer = csv.DictWriter(output, fieldnames=fieldnames, restval='')
+        writer.writeheader()
+        writer.writerows(results)
+        
+        output.seek(0)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        return send_file(
+            io.BytesIO(output.getvalue().encode()),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'all_results_{timestamp}.csv'
+        )
+    
+    except Exception as e:
+        logger.error(f"Error getting all results: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @api_bp.route('/jobs/<job_id>', methods=['GET'])
 def get_job(job_id: str) -> Tuple[dict, int]:
     """Get job details."""
