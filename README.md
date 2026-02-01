@@ -1,6 +1,6 @@
 # SARK - Distributed ML Model Benchmarking System
 
-A scalable, distributed system for benchmarking ML models across multiple devices. Collects performance metrics (speed, RAM, CPU, GPU utilization) and generates comprehensive CSV reports.
+Orchestrates [Dumont](https://github.com/exitflynn/dumont) nodes to make for a distributed system for benchmarking on-device inference for ML models across multiple (Windows, MacOS and Linux-based) devices. Collects performance metrics (speed, RAM, CPU, GPU utilization) and generates comprehensive CSV reports. Built with a scale of around 30-50 devices in mind.
 
 ## Quick Start
 
@@ -97,16 +97,10 @@ curl -X POST $ORCHESTRATOR_HOST/api/campaigns \
 
 ### Test Model (ONNX)
 
-Pre-configured test model for quick validation:
+Here's a small pre-trained model from the ONNX Model Zoo for quick validation:
 ```
 https://github.com/onnx/models/raw/refs/heads/main/validated/vision/object_detection_segmentation/tiny-yolov2/model/tinyyolov2-7.onnx
 ```
-
-This is a lightweight object detection model (~50MB) perfect for testing:
-- Fast load time (~100ms on CPU)
-- Fast inference (~10-20ms per run on CPU)
-- Compatible with ONNX Runtime
-- Small enough for quick validation
 
 ---
 
@@ -114,4 +108,4 @@ This is a lightweight object detection model (~50MB) perfect for testing:
 
 - **ONNX Runtime** - CPU, GPU (CUDA), DirectML (Windows)
 - **CoreML** - GPU (Metal), Neural Engine (Apple Silicon)
-- Extensible architecture for adding PyTorch, TensorFlow, etc.
+- Extensible architecture for adding PyTorch, OpenVINO etc.
